@@ -2,13 +2,9 @@
 #include "main_ui.h"
 #include "imgui/imgui_flags.h"
 #include "imgui/imgui.h"
-#include "processing.h"
-#include "offline.h"
 #include "settings.h"
 #include "satdump_vars.h"
 #include "core/backend.h"
-#include "resources.h"
-#include "common/widgets/markdown_helper.h"
 #include "common/audio/audio_sink.h"
 #include "imgui_notify/imgui_notify.h"
 #include "notify_logger_sink.h"
@@ -33,9 +29,7 @@ namespace satdump
     std::vector<std::shared_ptr<Application>> other_apps;
 
     SATDUMP_DLL2 bool update_ui = true;
-    bool open_recorder;
-
-    widgets::MarkdownHelper credits_md;
+    SATDUMP_DLL2 Screen current_screen = Screen::Viewer;
 
     std::shared_ptr<NotifyLoggerSink> notify_logger_sink;
     std::shared_ptr<StatusLoggerSink> status_logger_sink;
@@ -46,19 +40,12 @@ namespace satdump
         ImPlot3D::CreateContext();
 
         audio::registerSinks();
-        offline::setup();
         settings::setup();
-
-        // Load credits MD
-        std::ifstream ifs(resources::getResourcePath("credits.md"));
-        std::string credits_markdown((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
-        credits_md.set_md(credits_markdown);
 
         registerViewerHandlers();
 
         recorder_app = std::make_shared<RecorderApplication>();
         viewer_app = std::make_shared<ViewerApplication>();
-        open_recorder = satdump::config::main_cfg.contains("cli") && satdump::config::main_cfg["cli"].contains("start_recorder_device");
 
         eventBus->fire_event<AddGUIApplicationEvent>({other_apps});
 
@@ -102,100 +89,38 @@ namespace satdump
             ImGui::SetNextWindowPos({0, 0});
             ImGui::SetNextWindowSize({(float)dims.first, (float)dims.second});
             ImGui::Begin("SatDump UI", nullptr, NOWINDOW_FLAGS | ImGuiWindowFlags_NoDecoration);
-            if (ImGui::BeginTabBar("Main TabBar", ImGuiTabBarFlags_None))
+            if (current_screen == Screen::Viewer)
             {
-                if (ImGui::BeginTabItem("Offline processing"))
-                {
-                    if (processing::is_processing)
-                    {
-                        // ImGui::BeginChild("OfflineProcessingChild");
-                        processing::ui_call_list_mutex->lock();
-                        int live_width = dims.first; // ImGui::GetWindowWidth();
-                        int live_height = /*ImGui::GetWindowHeight()*/ dims.second - ImGui::GetCursorPos().y;
-                        float winheight = processing::ui_call_list->size() > 0 ? live_height / processing::ui_call_list->size() : live_height;
-                        float currentPos = ImGui::GetCursorPos().y;
-                        ImGui::PushStyleColor(ImGuiCol_TitleBg, ImGui::GetStyleColorVec4(ImGuiCol_TitleBgActive));
-                        for (std::shared_ptr<ProcessingModule> module : *processing::ui_call_list)
-                        {
-                            ImGui::SetNextWindowPos({0, currentPos});
-                            currentPos += winheight;
-                            ImGui::SetNextWindowSize({(float)live_width, (float)winheight});
-                            module->drawUI(false);
-                        }
-                        ImGui::PopStyleColor();
-                        processing::ui_call_list_mutex->unlock();
-                        // ImGui::EndChild();
-                    }
-                    else
-                    {
-                        ImGui::BeginChild("offlineprocessing", ImGui::GetContentRegionAvail());
-                        offline::render();
-                        ImGui::EndChild();
-                    }
-
-                    ImGui::EndTabItem();
-                }
-                if (ImGui::BeginTabItem("Recorder", nullptr, open_recorder ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None))
-                {
-                    open_recorder = false;
-                    recorder_app->draw();
-                    ImGui::EndTabItem();
-                }
-                if (ImGui::BeginTabItem("Viewer"))
-                {
-                    viewer_app->draw();
-                    ImGui::EndTabItem();
-                }
-                for (auto &app : other_apps)
-                {
-                    if (ImGui::BeginTabItem(std::string(app->get_name() + "##appsoption").c_str()))
-                    {
-                        app->draw();
-                        ImGui::EndTabItem();
-                    }
-                }
-                if (ImGui::BeginTabItem("Settings"))
-                {
-                    ImGui::BeginChild("settings", ImGui::GetContentRegionAvail());
-                    settings::render();
-                    ImGui::EndChild();
-                    ImGui::EndTabItem();
-                }
-                if (ImGui::BeginTabItem("About"))
-                {
-                    ImGui::BeginChild("credits_md", ImGui::GetContentRegionAvail(), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
-                    credits_md.render();
-                    ImGui::EndChild();
-                    ImGui::EndTabItem();
-                }
-#ifdef ENABLE_DEBUG_MAP
-                if (ImGui::BeginTabItem("Map"))
-                {
-                    tileMap tm;
-                    ImGui::SetNextItemWidth(120);
-                    ImGui::InputFloat("Latitude", &lat);
-                    ImGui::SameLine();
-                    ImGui::SetNextItemWidth(120);
-                    ImGui::InputFloat("Longitude", &lon);
-                    ImGui::SetNextItemWidth(120);
-                    ImGui::InputFloat("Latitude##1", &lat1);
-                    ImGui::SameLine();
-                    ImGui::SetNextItemWidth(120);
-                    ImGui::InputFloat("Longitude##1", &lon1);
-                    ImGui::SetNextItemWidth(250);
-                    ImGui::SliderInt("Zoom", &zoom, 0, 19);
-                    if (ImGui::Button("Get tile from server"))
-                    {
-                        // mapTile tl(tm.downloadTile(tm.coorToTile({lat, lon}, zoom), zoom));
-                        img = tm.getMapImage({lat, lon}, {lat1, lon1}, zoom);
-                        ivw.update(img);
-                    }
-                    ivw.draw(ImVec2(800, 400));
-                    ImGui::EndTabItem();
-                }
-#endif
+                viewer_app->draw();
             }
-            ImGui::EndTabBar();
+            else
+            {
+                ImGui::BeginChild("archive_screen", ImGui::GetContentRegionAvail());
+                ImGui::TextUnformatted("Archive");
+                ImGui::EndChild();
+            }
+#ifdef ENABLE_DEBUG_MAP
+                tileMap tm;
+                ImGui::SetNextItemWidth(120);
+                ImGui::InputFloat("Latitude", &lat);
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(120);
+                ImGui::InputFloat("Longitude", &lon);
+                ImGui::SetNextItemWidth(120);
+                ImGui::InputFloat("Latitude##1", &lat1);
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(120);
+                ImGui::InputFloat("Longitude##1", &lon1);
+                ImGui::SetNextItemWidth(250);
+                ImGui::SliderInt("Zoom", &zoom, 0, 19);
+                if (ImGui::Button("Get tile from server"))
+                {
+                    // mapTile tl(tm.downloadTile(tm.coorToTile({lat, lon}, zoom), zoom));
+                    img = tm.getMapImage({lat, lon}, {lat1, lon1}, zoom);
+                    ivw.update(img);
+                }
+                ivw.draw(ImVec2(800, 400));
+#endif
             ImGuiUtils_SendCurrentWindowToBack();
             ImGui::End();
 
