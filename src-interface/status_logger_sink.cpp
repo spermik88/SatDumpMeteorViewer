@@ -46,21 +46,38 @@ namespace satdump
 
     void StatusLoggerSink::draw_layer_bar()
     {
+        if (!viewer_app)
+            return;
+
+        auto mode = viewer_app->getLayerMode();
         ImGui::TextUnformatted("MODE");
         ImGui::SameLine();
-        if (ImGui::RadioButton("SINGLE", layer_mode == 0))
-            layer_mode = 0;
+        if (ImGui::RadioButton("SINGLE", mode == ViewerApplication::LayerMode::Single))
+            viewer_app->setLayerMode(ViewerApplication::LayerMode::Single);
         ImGui::SameLine();
-        if (ImGui::RadioButton("STACK", layer_mode == 1))
-            layer_mode = 1;
+        if (ImGui::RadioButton("STACK", mode == ViewerApplication::LayerMode::Stack))
+            viewer_app->setLayerMode(ViewerApplication::LayerMode::Stack);
+
+        ImGui::SameLine();
+        bool preview_enabled = viewer_app->isPreviewEnabled();
+        bool preview_available = viewer_app->isPreviewAvailable();
+        ImGui::BeginDisabled(!preview_available);
+        if (ImGui::Checkbox("Preview", &preview_enabled))
+            viewer_app->setPreviewEnabled(preview_enabled);
+        ImGui::EndDisabled();
 
         ImGui::SameLine(200 * ui_scale);
         ImGui::TextUnformatted("Layers");
-        for (size_t layer_index = 0; layer_index < kLayerCount; ++layer_index)
+        for (size_t layer_index = 0; layer_index < ViewerApplication::kLayerCount; ++layer_index)
         {
             ImGui::SameLine();
             std::string label = "##layer_" + std::to_string(layer_index + 1);
-            ImGui::Checkbox(label.c_str(), &layer_enabled[layer_index]);
+            bool layer_enabled = viewer_app->isLayerEnabled(layer_index);
+            bool layer_available = viewer_app->isLayerAvailable(layer_index);
+            ImGui::BeginDisabled(!layer_available);
+            if (ImGui::Checkbox(label.c_str(), &layer_enabled))
+                viewer_app->setLayerEnabled(layer_index, layer_enabled);
+            ImGui::EndDisabled();
         }
     }
 

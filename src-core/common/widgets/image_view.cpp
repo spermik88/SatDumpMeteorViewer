@@ -189,7 +189,7 @@ void ImageViewWidget::draw(ImVec2 win_size)
             ImGui::SetCursorPos(pre_pos);
 #endif
 
-            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Right))
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Right) || ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
                 autoFitNextFrame = true;
 
             ImPlot::EndPlot();
