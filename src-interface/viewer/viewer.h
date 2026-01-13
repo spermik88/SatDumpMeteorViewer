@@ -11,6 +11,7 @@
 #include "imgui/imgui_image.h"
 #include "nlohmann/json_utils.h"
 #include "common/overlay_handler.h"
+#include <array>
 
 #include "common/projection/reprojector_backend_utils.h"
 
@@ -40,6 +41,14 @@ namespace satdump
     class ViewerApplication : public Application
     {
     public:
+        static constexpr size_t kLayerCount = 6;
+
+        enum class LayerMode
+        {
+            Single = 0,
+            Stack = 1
+        };
+
         struct RenderLoadMenuElementsEvent
         {
         };
@@ -75,6 +84,12 @@ namespace satdump
 
         virtual void drawPanel();
         virtual void drawContent();
+        void updateLayerModelFromHandler(const std::shared_ptr<ViewerHandler> &handler);
+        void updateLayerComposite();
+        int resolveSingleLayerSelection() const;
+        void updateLayerSelectionsForMode();
+        void handleSwipePassNavigation(const ImRect &content_rect);
+        void switchPass(int offset);
 
         std::vector<std::string> opened_datasets;
         std::mutex product_handler_mutex;
@@ -93,6 +108,32 @@ namespace satdump
         int current_selected_tab = 0;
 
         OverlayHandler projection_overlay_handler;
+
+        struct LayerSet
+        {
+            std::array<const image::Image *, kLayerCount> layers{};
+            std::array<bool, kLayerCount> available{};
+            const image::Image *preview = nullptr;
+            bool preview_available = false;
+        };
+
+        LayerMode layer_mode = LayerMode::Single;
+        std::array<bool, kLayerCount> layer_enabled{};
+        bool preview_enabled = true;
+
+        LayerSet layer_set;
+        ImageViewWidget layer_view;
+        image::Image layer_composite;
+        bool layer_composite_dirty = true;
+        std::array<const image::Image *, kLayerCount> last_layer_ptrs{};
+        std::array<bool, kLayerCount> last_layer_enabled{};
+        const image::Image *last_preview_ptr = nullptr;
+        LayerMode last_layer_mode = LayerMode::Single;
+        bool last_preview_enabled = true;
+        const Products *layer_products_source = nullptr;
+
+        bool swipe_tracking = false;
+        ImVec2 swipe_start_pos = ImVec2(0.0f, 0.0f);
 
     public: // Projection UI stuff
         image::Image projected_image_result;
@@ -249,6 +290,15 @@ namespace satdump
         void save_settings();
         void loadDatasetInViewer(std::string path);
         void loadProductsInViewer(std::string path, std::string dataset_name = "");
+        void markLayerCompositeDirty() { layer_composite_dirty = true; }
+        bool isLayerAvailable(size_t index) const;
+        bool isLayerEnabled(size_t index) const;
+        void setLayerEnabled(size_t index, bool enabled);
+        bool isPreviewAvailable() const;
+        bool isPreviewEnabled() const;
+        void setPreviewEnabled(bool enabled);
+        LayerMode getLayerMode() const;
+        void setLayerMode(LayerMode mode);
 
     public:
         static std::string getID() { return "viewer"; }

@@ -7,6 +7,9 @@
 #include "common/utils.h"
 #include "resources.h"
 #include "main_ui.h"
+#include "common/image/image_utils.h"
+#include <algorithm>
+#include <cmath>
 
 void SelectableColor(ImU32 color) // Colors a cell in the table with the specified color in RGBA
 {
@@ -17,6 +20,21 @@ void SelectableColor(ImU32 color) // Colors a cell in the table with the specifi
 
 namespace satdump
 {
+    namespace
+    {
+        image::Image prepareLayerForStack(const image::Image *source)
+        {
+            if (!source)
+                return {};
+            image::Image output = *source;
+            if (output.channels() < 3)
+                output.to_rgb();
+            if (output.depth() != 16)
+                output = output.to_depth(16);
+            return output;
+        }
+    }
+
     ViewerApplication::ViewerApplication()
         : Application("viewer")
     {
@@ -213,6 +231,285 @@ namespace satdump
         return rect;
     }
 
+    bool ViewerApplication::isLayerAvailable(size_t index) const
+    {
+        if (index >= kLayerCount)
+            return false;
+        return layer_set.available[index];
+    }
+
+    bool ViewerApplication::isLayerEnabled(size_t index) const
+    {
+        if (index >= kLayerCount)
+            return false;
+        return layer_enabled[index];
+    }
+
+    void ViewerApplication::setLayerEnabled(size_t index, bool enabled)
+    {
+        if (index >= kLayerCount || !layer_set.available[index])
+            return;
+
+        if (layer_mode == LayerMode::Single)
+        {
+            if (!enabled)
+                return;
+            layer_enabled.fill(false);
+            layer_enabled[index] = true;
+        }
+        else
+        {
+            layer_enabled[index] = enabled;
+        }
+
+        markLayerCompositeDirty();
+    }
+
+    bool ViewerApplication::isPreviewAvailable() const
+    {
+        return layer_set.preview_available;
+    }
+
+    bool ViewerApplication::isPreviewEnabled() const
+    {
+        return preview_enabled && layer_set.preview_available;
+    }
+
+    void ViewerApplication::setPreviewEnabled(bool enabled)
+    {
+        if (!layer_set.preview_available)
+            return;
+        if (preview_enabled == enabled)
+            return;
+        preview_enabled = enabled;
+        markLayerCompositeDirty();
+    }
+
+    ViewerApplication::LayerMode ViewerApplication::getLayerMode() const
+    {
+        return layer_mode;
+    }
+
+    void ViewerApplication::setLayerMode(LayerMode mode)
+    {
+        if (layer_mode == mode)
+            return;
+        layer_mode = mode;
+        updateLayerSelectionsForMode();
+        markLayerCompositeDirty();
+    }
+
+    void ViewerApplication::updateLayerModelFromHandler(const std::shared_ptr<ViewerHandler> &handler)
+    {
+        LayerSet new_layer_set{};
+        const Products *new_source = nullptr;
+
+        int default_layer_index = -1;
+        if (handler)
+        {
+            if (auto image_handler = dynamic_cast<ImageViewerHandler *>(handler.get()))
+            {
+                new_source = image_handler->products;
+                default_layer_index = image_handler->active_channel_id;
+                if (image_handler->current_image.width() > 0)
+                {
+                    new_layer_set.preview = &image_handler->current_image;
+                    new_layer_set.preview_available = true;
+                }
+
+                if (image_handler->products)
+                {
+                    size_t layer_count = std::min(image_handler->products->images.size(), kLayerCount);
+                    for (size_t i = 0; i < layer_count; ++i)
+                    {
+                        new_layer_set.layers[i] = &image_handler->products->images[i].image;
+                        if (new_layer_set.layers[i])
+                            new_layer_set.available[i] = new_layer_set.layers[i]->width() > 0;
+                    }
+                }
+            }
+        }
+
+        bool source_changed = new_source != layer_products_source;
+        bool availability_changed = new_layer_set.available != layer_set.available ||
+            new_layer_set.preview_available != layer_set.preview_available;
+
+        layer_set = new_layer_set;
+        layer_products_source = new_source;
+
+        if (source_changed || availability_changed)
+        {
+            if (!layer_set.preview_available)
+                preview_enabled = false;
+            if (source_changed && layer_mode == LayerMode::Single)
+            {
+                layer_enabled.fill(false);
+                if (default_layer_index >= 0 &&
+                    default_layer_index < static_cast<int>(kLayerCount) &&
+                    layer_set.available[static_cast<size_t>(default_layer_index)])
+                    layer_enabled[static_cast<size_t>(default_layer_index)] = true;
+            }
+            updateLayerSelectionsForMode();
+            markLayerCompositeDirty();
+        }
+
+        if (!layer_set.preview_available && preview_enabled)
+            preview_enabled = false;
+    }
+
+    int ViewerApplication::resolveSingleLayerSelection() const
+    {
+        for (size_t i = 0; i < kLayerCount; ++i)
+            if (layer_enabled[i] && layer_set.available[i])
+                return static_cast<int>(i);
+
+        for (size_t i = 0; i < kLayerCount; ++i)
+            if (layer_set.available[i])
+                return static_cast<int>(i);
+
+        return -1;
+    }
+
+    void ViewerApplication::updateLayerSelectionsForMode()
+    {
+        if (layer_mode == LayerMode::Single)
+        {
+            int selected_index = resolveSingleLayerSelection();
+            layer_enabled.fill(false);
+            if (selected_index >= 0)
+                layer_enabled[static_cast<size_t>(selected_index)] = true;
+        }
+        else
+        {
+            for (size_t i = 0; i < kLayerCount; ++i)
+                if (!layer_set.available[i])
+                    layer_enabled[i] = false;
+        }
+    }
+
+    void ViewerApplication::updateLayerComposite()
+    {
+        bool selection_changed = last_layer_enabled != layer_enabled ||
+            last_layer_mode != layer_mode ||
+            last_preview_enabled != preview_enabled ||
+            last_layer_ptrs != layer_set.layers ||
+            last_preview_ptr != layer_set.preview;
+
+        if (!layer_composite_dirty && !selection_changed)
+            return;
+
+        layer_composite_dirty = false;
+        last_layer_enabled = layer_enabled;
+        last_layer_ptrs = layer_set.layers;
+        last_preview_ptr = layer_set.preview;
+        last_layer_mode = layer_mode;
+        last_preview_enabled = preview_enabled;
+
+        image::Image output;
+        if (layer_mode == LayerMode::Single)
+        {
+            int selected_index = resolveSingleLayerSelection();
+            if (selected_index >= 0 && layer_set.layers[static_cast<size_t>(selected_index)])
+            {
+                output = *layer_set.layers[static_cast<size_t>(selected_index)];
+                if (output.channels() < 3)
+                    output.to_rgb();
+            }
+        }
+        else
+        {
+            bool has_base = false;
+            image::Image base;
+            if (preview_enabled && layer_set.preview_available)
+            {
+                base = prepareLayerForStack(layer_set.preview);
+                has_base = base.width() > 0;
+            }
+
+            for (size_t i = 0; i < kLayerCount; ++i)
+            {
+                if (!layer_enabled[i] || !layer_set.available[i] || !layer_set.layers[i])
+                    continue;
+                image::Image overlay = prepareLayerForStack(layer_set.layers[i]);
+                if (!has_base)
+                {
+                    base = overlay;
+                    has_base = base.width() > 0;
+                }
+                else
+                {
+                    base = image::merge_images_opacity(base, overlay, 0.5f);
+                }
+            }
+            if (has_base)
+                output = base;
+        }
+
+        layer_composite = output;
+        layer_view.update(layer_composite);
+    }
+
+    void ViewerApplication::handleSwipePassNavigation(const ImRect &content_rect)
+    {
+        const float swipe_threshold = 80.0f * ui_scale;
+        ImVec2 mouse_pos = ImGui::GetMousePos();
+        bool hover_content = ImGui::IsMouseHoveringRect(content_rect.Min, content_rect.Max);
+
+        if (!swipe_tracking && hover_content && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        {
+            swipe_tracking = true;
+            swipe_start_pos = mouse_pos;
+        }
+
+        if (swipe_tracking && ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+        {
+            ImVec2 delta = ImVec2(mouse_pos.x - swipe_start_pos.x, mouse_pos.y - swipe_start_pos.y);
+            if (std::abs(delta.x) > swipe_threshold && std::abs(delta.x) > std::abs(delta.y))
+            {
+                if (delta.x < 0)
+                    switchPass(1);
+                else
+                    switchPass(-1);
+            }
+            swipe_tracking = false;
+        }
+
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            swipe_tracking = false;
+    }
+
+    void ViewerApplication::switchPass(int offset)
+    {
+        if (opened_datasets.empty() || products_and_handlers.empty())
+            return;
+
+        const std::string &current_dataset = products_and_handlers[current_handler_id]->dataset_name;
+        if (current_dataset.empty())
+            return;
+
+        auto it = std::find(opened_datasets.begin(), opened_datasets.end(), current_dataset);
+        if (it == opened_datasets.end())
+            return;
+
+        int current_index = static_cast<int>(std::distance(opened_datasets.begin(), it));
+        int target_index = current_index + offset;
+        if (target_index < 0)
+            target_index = static_cast<int>(opened_datasets.size()) - 1;
+        else if (target_index >= static_cast<int>(opened_datasets.size()))
+            target_index = 0;
+
+        const std::string &target_dataset = opened_datasets[target_index];
+        for (int i = 0; i < (int)products_and_handlers.size(); ++i)
+        {
+            if (products_and_handlers[i]->dataset_name == target_dataset)
+            {
+                current_handler_id = i;
+                markLayerCompositeDirty();
+                break;
+            }
+        }
+    }
+
     void ViewerApplication::drawPanel()
     {
         if (ImGui::BeginTabBar("Viewer Prob Tabbar", ImGuiTabBarFlags_None))
@@ -376,7 +673,22 @@ namespace satdump
             if (current_selected_tab == 0)
             {
                 if (products_and_handlers.size() > 0)
-                    products_and_handlers[current_handler_id]->handler->drawContents({float(right_width - 4), float(viewer_size.y)});
+                {
+                    ImVec2 content_pos = ImGui::GetCursorScreenPos();
+                    ImVec2 content_size = {float(right_width - 4), float(viewer_size.y)};
+                    auto handler = products_and_handlers[current_handler_id]->handler;
+                    updateLayerModelFromHandler(handler);
+                    if (dynamic_cast<ImageViewerHandler *>(handler.get()))
+                    {
+                        updateLayerComposite();
+                        layer_view.draw(content_size);
+                    }
+                    else
+                    {
+                        handler->drawContents(content_size);
+                    }
+                    handleSwipePassNavigation(ImRect(content_pos, ImVec2(content_pos.x + content_size.x, content_pos.y + content_size.y)));
+                }
             }
             else if (current_selected_tab == 1)
             {

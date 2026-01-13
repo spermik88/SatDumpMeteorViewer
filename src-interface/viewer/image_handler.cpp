@@ -239,6 +239,8 @@ namespace satdump
         }
 
         image_view.update(current_image);
+        if (viewer_app)
+            viewer_app->markLayerCompositeDirty();
 
         // Tooltip function
         image_view.mouseCallback = [this](int x, int y)
