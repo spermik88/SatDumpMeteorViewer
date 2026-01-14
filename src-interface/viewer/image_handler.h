@@ -66,6 +66,7 @@ namespace satdump
         unsigned int scale_texture_id = 0;
         uint32_t *scale_buffer = nullptr;
         bool scale_has_update = false;
+        uint64_t current_image_revision = 0;
 
         // LUT
         bool using_lut = false;

@@ -19,25 +19,79 @@ ImageViewWidget::~ImageViewWidget()
 
 void ImageViewWidget::update(image::Image &image)
 {
+    updateCached(&image, 0, 1.0f);
+}
+
+void ImageViewWidget::updateCached(const image::Image *image, uint64_t revision, float alpha)
+{
     image_mtx.lock();
-    if (image.width() == 0 || image.height() == 0)
+    if (!image || image->width() == 0 || image->height() == 0)
     {
         img_chunks.resize(0);
+        fimg_width = 0;
+        fimg_height = 0;
+        has_cached_image = false;
+        cached_chunks.clear();
+        cached_image_ptr = nullptr;
+        cached_image_revision = 0;
+        image_tint = ImVec4(1, 1, 1, 1);
+        has_to_update = true;
+        image_mtx.unlock();
+        return;
     }
-    else if (image.width() <= maxTextureSize && image.height() <= maxTextureSize)
+
+    const bool can_cache = revision != 0;
+    const bool reuse_cached = can_cache && has_cached_image &&
+        cached_image_ptr == image && cached_image_revision == revision;
+
+    image_tint = ImVec4(1.0f, 1.0f, 1.0f, alpha);
+
+    if (reuse_cached)
+    {
+        img_chunks.resize(cached_chunks.size());
+        for (size_t i = 0; i < cached_chunks.size(); ++i)
+        {
+            img_chunks[i].texture_id = cached_chunks[i].texture_id;
+            img_chunks[i].img_width = cached_chunks[i].img_width;
+            img_chunks[i].img_height = cached_chunks[i].img_height;
+            img_chunks[i].offset_x = cached_chunks[i].offset_x;
+            img_chunks[i].offset_y = cached_chunks[i].offset_y;
+            img_chunks[i].texture_buffer.clear();
+        }
+        fimg_width = image->width();
+        fimg_height = image->height();
+        has_to_update = false;
+        image_mtx.unlock();
+        return;
+    }
+
+    has_cached_image = can_cache;
+    cached_image_ptr = can_cache ? image : nullptr;
+    cached_image_revision = can_cache ? revision : 0;
+    cached_chunks.clear();
+
+    if (image->width() <= maxTextureSize && image->height() <= maxTextureSize)
     {
         img_chunks.resize(1);
-        fimg_width = img_chunks[0].img_width = image.width();
-        fimg_height = img_chunks[0].img_height = image.height();
+        fimg_width = img_chunks[0].img_width = image->width();
+        fimg_height = img_chunks[0].img_height = image->height();
 
         img_chunks[0].texture_buffer.resize(img_chunks[0].img_width * img_chunks[0].img_height);
-        image::image_to_rgba(image, img_chunks[0].texture_buffer.data());
+        image::image_to_rgba(*const_cast<image::Image *>(image), img_chunks[0].texture_buffer.data());
+        if (can_cache)
+        {
+            cached_chunks.resize(1);
+            cached_chunks[0].img_width = img_chunks[0].img_width;
+            cached_chunks[0].img_height = img_chunks[0].img_height;
+            cached_chunks[0].offset_x = 0;
+            cached_chunks[0].offset_y = 0;
+        }
     }
     else
     {
         logger->trace("Mouse tooltip might have an issue here! (TODO)");
-        fimg_width = image.width();
-        fimg_height = image.height();
+        fimg_width = image->width();
+        fimg_height = image->height();
 
         int chunksx = fimg_width / (maxTextureSize / 2);
         int chunksy = fimg_height / (maxTextureSize / 2);
@@ -46,6 +100,8 @@ void ImageViewWidget::update(image::Image &image)
         if (chunksy == 0)
             chunksy = 1;
         img_chunks.resize(chunksx * chunksy);
+        if (can_cache)
+            cached_chunks.resize(chunksx * chunksy);
 
         for (int ix = 0; ix < chunksx; ix++)
         {
@@ -61,15 +117,66 @@ void ImageViewWidget::update(image::Image &image)
                 img_chunks[i].img_height = height_end - height_start;
 
                 img_chunks[i].texture_buffer.resize(img_chunks[i].img_width * img_chunks[i].img_height);
-                auto crop = image.crop_to(width_start, height_start, width_end, height_end);
+                auto crop = image->crop_to(width_start, height_start, width_end, height_end);
                 image::image_to_rgba(crop, img_chunks[i].texture_buffer.data());
 
                 img_chunks[i].offset_x = width_start;
                 img_chunks[i].offset_y = fimg_height - height_start;
+
+                if (can_cache)
+                {
+                    cached_chunks[i].img_width = img_chunks[i].img_width;
+                    cached_chunks[i].img_height = img_chunks[i].img_height;
+                    cached_chunks[i].offset_x = img_chunks[i].offset_x;
+                    cached_chunks[i].offset_y = img_chunks[i].offset_y;
+                }
             }
         }
     }
     has_to_update = true;
+    image_mtx.unlock();
+}
+
+void ImageViewWidget::syncTextures()
+{
+    image_mtx.lock();
+    if (!img_chunks.empty())
+    {
+        for (size_t i = 0; i < img_chunks.size(); ++i)
+        {
+            auto &chunk = img_chunks[i];
+            if (chunk.texture_id == 0)
+                chunk.texture_id = makeImageTexture();
+            if (has_cached_image)
+            {
+                if (cached_chunks.size() <= i)
+                    cached_chunks.resize(img_chunks.size());
+                cached_chunks[i].texture_id = chunk.texture_id;
+            }
+        }
+
+        if (has_to_update)
+        {
+            for (auto &chunk : img_chunks)
+            {
+                updateMMImageTexture(chunk.texture_id, chunk.texture_buffer.data(), chunk.img_width, chunk.img_height);
+                chunk.texture_buffer.clear();
+            }
+            has_to_update = false;
+        }
+    }
+    image_mtx.unlock();
+}
+
+void ImageViewWidget::plotChunks()
+{
+    image_mtx.lock();
+    for (auto &chunk : img_chunks)
+    {
+        ImPlot::PlotImage((id_str + "plotimg").c_str(), (void *)(intptr_t)chunk.texture_id,
+                          ImPlotPoint(chunk.offset_x, chunk.offset_y), ImPlotPoint(chunk.offset_x + chunk.img_width, chunk.offset_y + chunk.img_height),
+                          ImVec2(0, 0), ImVec2(1, 1), image_tint);
+    }
     image_mtx.unlock();
 }
 
@@ -131,21 +238,8 @@ inline void addPlotScroll(ImPlotPlot &plot, float wheel_scroll)
 
 void ImageViewWidget::draw(ImVec2 win_size)
 {
+    syncTextures();
     image_mtx.lock();
-
-    for (auto &chunk : img_chunks)
-        if (chunk.texture_id == 0)
-            chunk.texture_id = makeImageTexture();
-
-    if (has_to_update)
-    {
-        for (auto &chunk : img_chunks)
-        {
-            updateMMImageTexture(chunk.texture_id, chunk.texture_buffer.data(), chunk.img_width, chunk.img_height);
-            chunk.texture_buffer.clear();
-        }
-        has_to_update = false;
-    }
 
     ImGui::BeginChild(id_str.c_str(), win_size, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
@@ -169,7 +263,10 @@ void ImageViewWidget::draw(ImVec2 win_size)
 
             for (auto &chunk : img_chunks)
                 ImPlot::PlotImage((id_str + "plotimg").c_str(), (void *)(intptr_t)chunk.texture_id,
-                                  ImPlotPoint(chunk.offset_x, chunk.offset_y), ImPlotPoint(chunk.offset_x + chunk.img_width, chunk.offset_y + chunk.img_height));
+                                  ImPlotPoint(chunk.offset_x, chunk.offset_y), ImPlotPoint(chunk.offset_x + chunk.img_width, chunk.offset_y + chunk.img_height),
+                                  ImVec2(0, 0), ImVec2(1, 1), image_tint);
+            if (plotOverlay)
+                plotOverlay();
 
             auto pos = ImPlot::GetPlotMousePos(ImAxis_X1, ImAxis_Y1);
             if (pos.x >= 0 && pos.y >= 0 &&
