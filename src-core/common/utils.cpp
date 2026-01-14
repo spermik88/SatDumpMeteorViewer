@@ -274,7 +274,7 @@ std::wstring s2ws(const std::string &str)
     return converterX.from_bytes(str);
 }
 
-std::string prepareAutomatedPipelineFolder(time_t timevalue, double frequency, std::string pipeline_name, std::string folder)
+std::string prepareAutomatedPipelineFolder(time_t timevalue, double frequency, std::string pipeline_name, std::string folder, bool create_directories)
 {
     std::tm *timeReadable = gmtime(&timevalue);
     if (folder == "")
@@ -291,7 +291,8 @@ std::string prepareAutomatedPipelineFolder(time_t timevalue, double frequency, s
                             (timeReadable->tm_hour > 9 ? std::to_string(timeReadable->tm_hour) : "0" + std::to_string(timeReadable->tm_hour)) + "-" +
                             (timeReadable->tm_min > 9 ? std::to_string(timeReadable->tm_min) : "0" + std::to_string(timeReadable->tm_min));
     std::string output_dir = folder + "/" + timestamp + "_" + pipeline_name + "_" + format_notated(frequency, "Hz");
-    std::filesystem::create_directories(output_dir);
+    if (create_directories)
+        std::filesystem::create_directories(output_dir);
     logger->info("Generated folder name : " + output_dir);
     return output_dir;
 }

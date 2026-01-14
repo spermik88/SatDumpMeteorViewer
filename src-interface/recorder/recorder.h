@@ -131,6 +131,8 @@ namespace satdump
         PipelineUISelector pipeline_selector;
         std::unique_ptr<satdump::LivePipeline> live_pipeline;
         std::string pipeline_output_dir;
+        std::string pipeline_output_dir_tmp;
+        std::string pipeline_run_id;
         nlohmann::json pipeline_params;
 
         int pipeline_preset_id = 0;
@@ -169,6 +171,8 @@ namespace satdump
             Pipeline selected_pipeline;
             nlohmann::json pipeline_params;
             std::string output_dir;
+            std::string output_dir_tmp;
+            std::string run_id;
             std::shared_ptr<ctpl::thread_pool> lpool;
             std::shared_ptr<satdump::LivePipeline> live_pipeline;
 

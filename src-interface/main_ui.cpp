@@ -14,6 +14,7 @@
 #include "common/image/image.h"
 #include "common/utils.h"
 #include "nlohmann/json_utils.h"
+#include "common/ops_state.h"
 
 #include <algorithm>
 #include <chrono>
@@ -138,6 +139,8 @@ namespace satdump
             for (const auto &entry : std::filesystem::directory_iterator(base_path))
             {
                 if (!entry.is_directory())
+                    continue;
+                if (ops::is_temp_run_dir(entry.path().filename().string()))
                     continue;
 
                 ArchiveEntry item;

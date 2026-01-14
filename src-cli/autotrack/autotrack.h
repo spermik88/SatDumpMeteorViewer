@@ -72,6 +72,8 @@ private:
     satdump::Pipeline selected_pipeline;
     nlohmann::json pipeline_params;
     std::string pipeline_output_dir;
+    std::string pipeline_output_dir_tmp;
+    std::string pipeline_run_id;
 
     bool is_processing = false;
     void start_processing();
@@ -100,6 +102,8 @@ private: // VFO Stuff
         satdump::Pipeline selected_pipeline;
         nlohmann::json pipeline_params;
         std::string output_dir;
+        std::string output_dir_tmp;
+        std::string run_id;
         std::shared_ptr<ctpl::thread_pool> lpool;
         std::shared_ptr<satdump::LivePipeline> live_pipeline;
 
