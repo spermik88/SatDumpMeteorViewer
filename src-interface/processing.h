@@ -25,5 +25,7 @@ namespace satdump
                      std::string input_file,
                      std::string output_file,
                      nlohmann::json parameters);
+
+        void enforce_images_disk_limit(const std::string &output_file);
     }
 }

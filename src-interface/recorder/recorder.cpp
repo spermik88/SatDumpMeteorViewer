@@ -248,6 +248,8 @@ namespace satdump
 
     void RecorderApplication::drawUI()
     {
+        handle_source_restart();
+
         ImVec2 recorder_size = ImGui::GetContentRegionAvail();
         float wf_size_offset = 0;
         if (is_processing && !processing_modules_floating_windows)

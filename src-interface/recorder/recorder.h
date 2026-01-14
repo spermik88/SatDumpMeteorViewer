@@ -19,6 +19,7 @@
 #include "core/live_pipeline.h"
 
 #include "tracking/tracking_widget.h"
+#include <chrono>
 
 namespace satdump
 {
@@ -145,6 +146,9 @@ namespace satdump
         bool show_tracking = false;
         bool tracking_started_cli = false;
 
+        bool source_restart_pending = false;
+        std::chrono::steady_clock::time_point source_restart_time;
+
         // Debug
         widgets::ConstellationViewer *constellation_debug = nullptr;
 
@@ -187,6 +191,7 @@ namespace satdump
         void load_rec_path_data();
 
         void try_init_tracking_widget();
+        void handle_source_restart();
 
         uint64_t get_samplerate()
         {
@@ -218,6 +223,13 @@ namespace satdump
     public:
         RecorderApplication();
         ~RecorderApplication();
+
+        dsp::DSPSampleSource::SourceStatus get_source_status() const
+        {
+            if (!source_ptr)
+                return dsp::DSPSampleSource::SourceStatus::Offline;
+            return source_ptr->get_status();
+        }
 
         void save_settings()
         {
