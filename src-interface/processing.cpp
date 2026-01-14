@@ -67,7 +67,16 @@ namespace satdump
                 if (!std::filesystem::exists(meta_path))
                     return 0.0;
 
-                auto meta = loadJsonFile(meta_path.string());
+                nlohmann::ordered_json meta;
+                try
+                {
+                    meta = loadJsonFile(meta_path.string());
+                }
+                catch (const std::exception &)
+                {
+                    return 0.0;
+                }
+
                 if (meta.contains("timestamp"))
                 {
                     if (meta["timestamp"].is_number())

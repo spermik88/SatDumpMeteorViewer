@@ -123,7 +123,7 @@ namespace satdump
                 preview.resize_bilinear(new_width, new_height, false);
             }
 
-            image::save_png(preview, thumb_path.string());
+            image::save_img(preview, thumb_path.string());
         }
 
         void load_archive_index()
@@ -147,32 +147,41 @@ namespace satdump
                 item.thumb_path = (entry.path() / "thumb.png").string();
 
                 std::filesystem::path meta_path = entry.path() / "meta.json";
-                if (std::filesystem::exists(meta_path))
-                {
-                    auto meta = loadJsonFile(meta_path.string());
-                    if (meta.contains("timestamp"))
-                    {
-                        if (meta["timestamp"].is_number())
-                        {
-                            item.timestamp = meta["timestamp"].get<double>();
-                            item.label = timestamp_to_string(item.timestamp);
-                        }
-                        else if (meta["timestamp"].is_string())
-                        {
-                            item.label = meta["timestamp"].get<std::string>();
-                            auto parsed = parse_timestamp(item.label);
-                            if (parsed.has_value())
-                                item.timestamp = parsed.value();
-                        }
-                    }
+                if (!std::filesystem::exists(meta_path))
+                    continue;
 
-                    if (item.label.empty())
+                nlohmann::ordered_json meta;
+                try
+                {
+                    meta = loadJsonFile(meta_path.string());
+                }
+                catch (const std::exception &)
+                {
+                    continue;
+                }
+
+                if (meta.contains("timestamp"))
+                {
+                    if (meta["timestamp"].is_number())
                     {
-                        if (meta.contains("datetime") && meta["datetime"].is_string())
-                            item.label = meta["datetime"].get<std::string>();
-                        else if (meta.contains("time") && meta["time"].is_string())
-                            item.label = meta["time"].get<std::string>();
+                        item.timestamp = meta["timestamp"].get<double>();
+                        item.label = timestamp_to_string(item.timestamp);
                     }
+                    else if (meta["timestamp"].is_string())
+                    {
+                        item.label = meta["timestamp"].get<std::string>();
+                        auto parsed = parse_timestamp(item.label);
+                        if (parsed.has_value())
+                            item.timestamp = parsed.value();
+                    }
+                }
+
+                if (item.label.empty())
+                {
+                    if (meta.contains("datetime") && meta["datetime"].is_string())
+                        item.label = meta["datetime"].get<std::string>();
+                    else if (meta.contains("time") && meta["time"].is_string())
+                        item.label = meta["time"].get<std::string>();
                 }
 
                 if (item.timestamp == 0.0)

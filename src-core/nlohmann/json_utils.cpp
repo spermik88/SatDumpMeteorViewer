@@ -18,9 +18,25 @@ nlohmann::ordered_json loadJsonFile(std::string path)
 
 void saveJsonFile(std::string path, nlohmann::ordered_json j)
 {
-    std::ofstream ostream(path);
+    std::filesystem::path target_path(path);
+    std::filesystem::path write_path = target_path;
+    if (target_path.filename() == "meta.json")
+        write_path += ".tmp";
+
+    std::ofstream ostream(write_path.string());
     ostream << j.dump(4);
     ostream.close();
+
+    if (write_path != target_path)
+    {
+        std::error_code ec;
+        std::filesystem::rename(write_path, target_path, ec);
+        if (ec)
+        {
+            std::filesystem::remove(target_path, ec);
+            std::filesystem::rename(write_path, target_path, ec);
+        }
+    }
 }
 
 void saveCborFile(std::string path, nlohmann::ordered_json j)
