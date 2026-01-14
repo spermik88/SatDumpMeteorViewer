@@ -8,14 +8,27 @@
 #include "resources.h"
 #include "main_ui.h"
 #include "common/image/image_utils.h"
+#include "common/image/io.h"
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 
 void SelectableColor(ImU32 color) // Colors a cell in the table with the specified color in RGBA
 {
     ImVec2 p_min = ImGui::GetItemRectMin();
     ImVec2 p_max = ImGui::GetItemRectMax();
     ImGui::GetWindowDrawList()->AddRectFilled(p_min, p_max, color);
+}
+
+namespace
+{
+    std::filesystem::path archive_base_path()
+    {
+        std::filesystem::path preferred = std::filesystem::path("files") / "images";
+        if (std::filesystem::exists(preferred))
+            return preferred;
+        return std::filesystem::path("images");
+    }
 }
 
 namespace satdump
@@ -290,6 +303,8 @@ namespace satdump
             return;
         layer_mode = mode;
         updateLayerSelectionsForMode();
+        if (layer_mode == LayerMode::Stack && stack_composite_available)
+            resetStackDefaults();
         markLayerCompositeDirty();
     }
 
@@ -365,6 +380,9 @@ namespace satdump
         layer_set = new_layer_set;
         layer_products_source = new_source;
 
+        if (run_changed)
+            refreshStackComposite();
+
         if (source_changed || availability_changed || preview_ptr_changed || layers_ptr_changed || run_changed)
         {
             if (!layer_set.preview_available)
@@ -380,6 +398,9 @@ namespace satdump
             updateLayerSelectionsForMode();
             markLayerCompositeDirty();
         }
+
+        if (run_changed && layer_mode == LayerMode::Stack && stack_composite_available)
+            resetStackDefaults();
 
         if (!layer_set.preview_available && preview_enabled)
             preview_enabled = false;
@@ -413,6 +434,56 @@ namespace satdump
                 if (!layer_set.available[i])
                     layer_enabled[i] = false;
         }
+    }
+
+    void ViewerApplication::refreshStackComposite()
+    {
+        stack_composite_available = false;
+        stack_composite_revision = 0;
+        stack_composite_image.clear();
+
+        if (layer_run_id.empty())
+            return;
+
+        std::filesystem::path composite_path = archive_base_path() / layer_run_id / "composite.png";
+        if (!std::filesystem::exists(composite_path))
+            return;
+
+        image::Image composite;
+        image::load_img(composite, composite_path.string());
+        if (composite.width() == 0 || composite.height() == 0)
+            return;
+
+        if (composite.channels() < 3)
+            composite.to_rgb();
+
+        stack_composite_image = composite;
+        stack_composite_available = true;
+        stack_composite_revision = (layer_run_epoch << 32) | 1;
+    }
+
+    void ViewerApplication::resetStackDefaults()
+    {
+        if (layer_mode != LayerMode::Stack)
+            return;
+
+        for (size_t i = 0; i < kLayerCount; ++i)
+            layer_enabled[i] = layer_set.available[i];
+        preview_enabled = layer_set.preview_available;
+
+        stack_default_layer_enabled = layer_enabled;
+        stack_default_preview_enabled = preview_enabled;
+
+        markLayerCompositeDirty();
+    }
+
+    bool ViewerApplication::shouldUseStackComposite() const
+    {
+        if (layer_mode != LayerMode::Stack || !stack_composite_available)
+            return false;
+
+        return stack_default_layer_enabled == layer_enabled &&
+            stack_default_preview_enabled == preview_enabled;
     }
 
     void ViewerApplication::updateLayerComposite()
@@ -456,6 +527,14 @@ namespace satdump
         }
         else
         {
+            if (shouldUseStackComposite())
+            {
+                stack_layers_warning = false;
+                layer_view.plotOverlay = []() {};
+                layer_view.updateCached(&stack_composite_image, stack_composite_revision, 1.0f);
+                return;
+            }
+
             size_t enabled_count = getEnabledStackLayerCount();
             stack_layers_warning = enabled_count > 3;
             float overlay_alpha = stack_layers_warning ? 0.35f : 0.5f;

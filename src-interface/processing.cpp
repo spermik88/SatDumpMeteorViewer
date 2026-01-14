@@ -11,7 +11,12 @@
 #include "core/pipeline.h"
 
 #include "core/config.h"
+#include "products/dataset.h"
+#include "products/image_products.h"
+#include "products/products.h"
 #include "main_ui.h"
+#include "common/image/image_utils.h"
+#include "common/image/io.h"
 #include "nlohmann/json_utils.h"
 
 namespace satdump
@@ -180,6 +185,75 @@ namespace satdump
                 if (changed)
                     saveJsonFile(index_path.string(), index);
             }
+
+            image::Image normalize_layer_image(const image::Image &source, int target_depth, size_t target_width, size_t target_height)
+            {
+                image::Image layer = source;
+                if (layer.channels() < 3)
+                    layer.to_rgb();
+                if (layer.depth() != target_depth)
+                    layer = layer.to_depth(target_depth);
+                if (layer.width() != target_width || layer.height() != target_height)
+                    layer.resize_bilinear(static_cast<int>(target_width), static_cast<int>(target_height), false);
+                return layer;
+            }
+
+            void generate_composite_for_run(const std::filesystem::path &run_path)
+            {
+                std::filesystem::path preview_path = run_path / "preview.png";
+                if (!std::filesystem::exists(preview_path))
+                    return;
+
+                image::Image preview;
+                image::load_img(preview, preview_path.string());
+                if (preview.width() == 0 || preview.height() == 0)
+                    return;
+
+                image::Image composite = preview;
+                if (composite.channels() < 3)
+                    composite.to_rgb();
+                if (composite.depth() != 16)
+                    composite = composite.to_depth(16);
+
+                std::filesystem::path dataset_path = run_path / "dataset.json";
+                if (std::filesystem::exists(dataset_path))
+                {
+                    try
+                    {
+                        ProductDataSet dataset;
+                        dataset.load(dataset_path.string());
+                        for (const auto &product_entry : dataset.products_list)
+                        {
+                            std::filesystem::path product_path = product_entry;
+                            if (product_path.is_relative())
+                                product_path = run_path / product_path;
+
+                            std::shared_ptr<Products> products = loadProducts(product_path.string());
+                            auto image_products = std::dynamic_pointer_cast<ImageProducts>(products);
+                            if (!image_products)
+                                continue;
+
+                            for (const auto &img_holder : image_products->images)
+                            {
+                                if (img_holder.image.width() == 0 || img_holder.image.height() == 0)
+                                    continue;
+
+                                image::Image layer = normalize_layer_image(img_holder.image,
+                                                                           composite.depth(),
+                                                                           composite.width(),
+                                                                           composite.height());
+                                composite = image::merge_images_opacity(composite, layer, 0.5f);
+                            }
+                        }
+                    }
+                    catch (const std::exception &e)
+                    {
+                        logger->warn("Failed to generate composite for %s: %s", run_path.string().c_str(), e.what());
+                    }
+                }
+
+                image::save_img(composite, (run_path / "composite.png").string());
+            }
         }
 
         void enforce_images_disk_limit(const std::string &output_file)
@@ -295,6 +369,8 @@ namespace satdump
             is_processing = false;
 
             logger->info("Done! Goodbye");
+
+            generate_composite_for_run(output_file);
 
             if (config::main_cfg["user_interface"]["open_viewer_post_processing"]["value"].get<bool>())
             {
