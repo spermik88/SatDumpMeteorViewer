@@ -40,7 +40,7 @@ namespace image
             if (!path.has_filename())
                 return false;
             const std::string stem = path.stem().string();
-            return stem == "preview" || stem == "layers" || stem == "thumb";
+            return stem == "preview" || stem == "layers" || stem == "thumb" || stem == "composite";
         }
     }
 

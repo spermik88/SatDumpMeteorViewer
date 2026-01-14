@@ -88,6 +88,9 @@ namespace satdump
         void updateLayerComposite();
         int resolveSingleLayerSelection() const;
         void updateLayerSelectionsForMode();
+        void refreshStackComposite();
+        void resetStackDefaults();
+        bool shouldUseStackComposite() const;
         void handleSwipePassNavigation(const ImRect &content_rect);
         void switchPass(int offset);
 
@@ -125,6 +128,7 @@ namespace satdump
         ImageViewWidget layer_view;
         std::array<ImageViewWidget, kLayerCount> stack_layer_views;
         image::Image layer_composite;
+        image::Image stack_composite_image;
         bool layer_composite_dirty = true;
         std::array<uint64_t, kLayerCount> layer_revisions{};
         uint64_t preview_revision = 0;
@@ -139,6 +143,10 @@ namespace satdump
         std::string layer_run_id;
         uint64_t layer_run_epoch = 1;
         bool stack_layers_warning = false;
+        bool stack_composite_available = false;
+        uint64_t stack_composite_revision = 0;
+        std::array<bool, kLayerCount> stack_default_layer_enabled{};
+        bool stack_default_preview_enabled = true;
 
         bool swipe_tracking = false;
         ImVec2 swipe_start_pos = ImVec2(0.0f, 0.0f);
