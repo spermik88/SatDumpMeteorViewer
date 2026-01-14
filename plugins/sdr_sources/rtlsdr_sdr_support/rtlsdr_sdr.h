@@ -9,6 +9,9 @@
 #include "logger.h"
 #include "common/rimgui.h"
 #include <thread>
+#include <atomic>
+#include <cstdint>
+#include <chrono>
 #include "common/widgets/double_list.h"
 
 class RtlSdrSource : public dsp::DSPSampleSource
@@ -38,6 +41,7 @@ protected:
     std::thread work_thread;
 
     bool thread_should_run = false;
+    std::atomic<int64_t> last_rx_timestamp_ms{0};
 
     void mainThread()
     {
@@ -47,7 +51,20 @@ protected:
 
         while (thread_should_run)
         {
-            rtlsdr_read_async(rtlsdr_dev_obj, _rx_callback, &output_stream, 0, buffer_size);
+            int result = rtlsdr_read_async(rtlsdr_dev_obj, _rx_callback, this, 0, buffer_size);
+            if (!thread_should_run)
+                break;
+
+            auto now = std::chrono::steady_clock::now().time_since_epoch();
+            auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+            auto last_rx_ms = last_rx_timestamp_ms.load();
+            if (result < 0 || (last_rx_ms > 0 && now_ms - last_rx_ms > 5000))
+            {
+                if (result < 0)
+                    logger->error("RTL-SDR async read error: %d", result);
+                set_status(SourceStatus::Error);
+                thread_should_run = false;
+            }
         }
     }
 

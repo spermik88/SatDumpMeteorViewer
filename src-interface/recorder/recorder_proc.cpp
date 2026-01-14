@@ -3,6 +3,7 @@
 #include "main_ui.h"
 #include "logger.h"
 #include "processing.h"
+#include <chrono>
 
 #ifndef _MSC_VER
 #include <sys/statvfs.h>
@@ -89,6 +90,7 @@ namespace satdump
                 throw satdump_exception("Samplerate not set!");
 
             source_ptr->start();
+            source_ptr->set_status(dsp::DSPSampleSource::SourceStatus::Online);
 
             if (current_decimation > 1)
             {
@@ -107,6 +109,7 @@ namespace satdump
         }
         catch (std::runtime_error &e)
         {
+            source_ptr->set_status(dsp::DSPSampleSource::SourceStatus::Error);
             sdr_error.set_message(style::theme.red, e.what());
             logger->error(e.what());
         }
@@ -122,6 +125,7 @@ namespace satdump
             decim_ptr->stop();
         source_ptr->stop();
         is_started = false;
+        source_ptr->set_status(dsp::DSPSampleSource::SourceStatus::Offline);
         config::main_cfg["user"]["recorder_sdr_settings"]["last_used_sdr"] = sources[sdr_select_id].name;
         config::main_cfg["user"]["recorder_sdr_settings"][sources[sdr_select_id].name] = source_ptr->get_settings();
         config::main_cfg["user"]["recorder_sdr_settings"][sources[sdr_select_id].name]["samplerate"] = source_ptr->get_samplerate();
@@ -129,6 +133,53 @@ namespace satdump
         config::main_cfg["user"]["recorder_sdr_settings"][sources[sdr_select_id].name]["xconverter_frequency"] = xconverter_frequency;
         config::main_cfg["user"]["recorder_sdr_settings"][sources[sdr_select_id].name]["decimation"] = current_decimation;
         config::saveUserConfig();
+    }
+
+    void RecorderApplication::handle_source_restart()
+    {
+        if (!is_processing || !source_ptr)
+            return;
+
+        auto status = source_ptr->get_status();
+        if (status == dsp::DSPSampleSource::SourceStatus::Online)
+        {
+            source_restart_pending = false;
+            return;
+        }
+
+        auto now = std::chrono::steady_clock::now();
+        if (!source_restart_pending)
+        {
+            logger->warn("SDR source is offline/error, restarting...");
+            if (is_started)
+                stop();
+            source_ptr->close();
+            source_restart_pending = true;
+            source_restart_time = now + std::chrono::seconds(3);
+            return;
+        }
+
+        if (now < source_restart_time)
+            return;
+
+        try
+        {
+            source_ptr->open();
+            start();
+            if (source_ptr->get_status() == dsp::DSPSampleSource::SourceStatus::Online)
+            {
+                source_restart_pending = false;
+                return;
+            }
+        }
+        catch (std::exception &e)
+        {
+            source_ptr->set_status(dsp::DSPSampleSource::SourceStatus::Error);
+            sdr_error.set_message(style::theme.red, e.what());
+            logger->error("Failed to restart SDR source: %s", e.what());
+        }
+
+        source_restart_time = now + std::chrono::seconds(3);
     }
 
     void RecorderApplication::try_load_sdr_settings()
@@ -224,6 +275,7 @@ namespace satdump
             }
 
             live_pipeline.reset();
+            processing::enforce_images_disk_limit(pipeline_output_dir);
         }
     }
 

@@ -134,6 +134,9 @@ namespace satdump
                 }
             }
 
+            if (it->selected_pipeline.name != "")
+                processing::enforce_images_disk_limit(it->output_dir);
+
             vfo_list.erase(it);
         }
         if (vfo_list.size() == 0)

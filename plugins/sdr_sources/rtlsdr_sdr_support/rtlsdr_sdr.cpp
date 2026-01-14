@@ -1,14 +1,21 @@
 #include "rtlsdr_sdr.h"
+#include <chrono>
 
 void RtlSdrSource::_rx_callback(unsigned char *buf, uint32_t len, void *ctx)
 {
-    std::shared_ptr<dsp::stream<complex_t>> stream = *((std::shared_ptr<dsp::stream<complex_t>> *)ctx);
+    auto *self = static_cast<RtlSdrSource *>(ctx);
+    std::shared_ptr<dsp::stream<complex_t>> stream = self->output_stream;
+    if (!stream)
+        return;
     for (int i = 0; i < (int)len / 2; i++)
     {
         stream->writeBuf[i].real = (buf[i * 2 + 0] - 127.4f) / 128.0f;
         stream->writeBuf[i].imag = (buf[i * 2 + 1] - 127.4f) / 128.0f;
     }
     stream->swap(len / 2);
+    auto now = std::chrono::steady_clock::now().time_since_epoch();
+    auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+    self->last_rx_timestamp_ms.store(now_ms);
 };
 
 void RtlSdrSource::set_gains()
@@ -191,6 +198,7 @@ void RtlSdrSource::start()
 
     is_started = true;
     changed_agc = true;
+    set_status(SourceStatus::Online);
 
     set_frequency(d_frequency);
 
@@ -200,6 +208,8 @@ void RtlSdrSource::start()
 
     rtlsdr_reset_buffer(rtlsdr_dev_obj);
     display_gain = (float)gain / 10.0f;
+    auto now = std::chrono::steady_clock::now().time_since_epoch();
+    last_rx_timestamp_ms.store(std::chrono::duration_cast<std::chrono::milliseconds>(now).count());
     thread_should_run = true;
     work_thread = std::thread(&RtlSdrSource::mainThread, this);
 }
@@ -220,6 +230,7 @@ void RtlSdrSource::stop()
         rtlsdr_close(rtlsdr_dev_obj);
     }
     is_started = false;
+    set_status(SourceStatus::Offline);
 }
 
 void RtlSdrSource::close()

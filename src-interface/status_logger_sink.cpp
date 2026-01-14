@@ -2,6 +2,7 @@
 #include "imgui/imgui_internal.h"
 #include "processing.h"
 #include "core/config.h"
+#include "core/style.h"
 #include "common/imgui_utils.h"
 #include "main_ui.h"
 
@@ -121,6 +122,27 @@ namespace satdump
         {
             if (ImGui::BeginMenuBar())
             {
+                if (recorder_app)
+                {
+                    auto status = recorder_app->get_source_status();
+                    const char *status_label = "офлайн";
+                    ImVec4 status_color = style::theme.yellow.Value;
+                    if (status == dsp::DSPSampleSource::SourceStatus::Online)
+                    {
+                        status_label = "онлайн";
+                        status_color = style::theme.green.Value;
+                    }
+                    else if (status == dsp::DSPSampleSource::SourceStatus::Error)
+                    {
+                        status_label = "ошибка";
+                        status_color = style::theme.red.Value;
+                    }
+
+                    ImGui::TextColored(status_color, "SDR: %s", status_label);
+                    ImGui::SameLine();
+                    ImGui::Separator();
+                }
+
                 ImGui::TextUnformatted(lvl.c_str());
                 ImGui::SameLine(75 * ui_scale);
                 ImGui::Separator();

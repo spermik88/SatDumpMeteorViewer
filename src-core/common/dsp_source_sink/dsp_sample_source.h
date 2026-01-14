@@ -8,6 +8,7 @@
 #include "nlohmann/json_utils.h"
 #include "format_notated.h"
 #include "core/exception.h"
+#include <atomic>
 
 namespace dsp
 {
@@ -26,6 +27,13 @@ namespace dsp
     class DSPSampleSource
     {
     public:
+        enum class SourceStatus
+        {
+            Offline,
+            Online,
+            Error
+        };
+
         std::shared_ptr<dsp::stream<complex_t>> output_stream;
         nlohmann::json d_settings;
         uint64_t d_frequency;
@@ -36,6 +44,8 @@ namespace dsp
         {
             return std::min<int>(ceil((double)samplerate / double(buffer_per_sec * blocksize)) * blocksize, dsp::STREAM_BUFFER_SIZE);
         }
+
+        std::atomic<SourceStatus> source_status{SourceStatus::Offline};
 
     public:
         virtual void open() = 0;                                                              // Open the device, source, etc, but don't start the stream yet
@@ -53,6 +63,16 @@ namespace dsp
 
         virtual void set_samplerate(uint64_t samplerate) = 0; // This should set the samplerate of the device
         virtual uint64_t get_samplerate() = 0;                // This should return the current samplerate of the device
+
+        void set_status(SourceStatus status)
+        {
+            source_status.store(status);
+        }
+
+        SourceStatus get_status() const
+        {
+            return source_status.load();
+        }
 
         DSPSampleSource(SourceDescriptor source)
         {
