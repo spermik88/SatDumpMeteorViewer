@@ -239,6 +239,7 @@ namespace satdump
         }
 
         image_view.update(current_image);
+        current_image_revision++;
         if (viewer_app)
             viewer_app->markLayerCompositeDirty();
 

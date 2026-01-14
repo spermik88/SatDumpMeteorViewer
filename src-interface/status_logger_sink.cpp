@@ -80,6 +80,11 @@ namespace satdump
                 viewer_app->setLayerEnabled(layer_index, layer_enabled);
             ImGui::EndDisabled();
         }
+        if (mode == ViewerApplication::LayerMode::Stack && viewer_app->shouldWarnAboutStackLayers())
+        {
+            ImGui::SameLine();
+            ImGui::TextColored(style::theme.yellow.Value, "Слишком много слоёв (>3): снижена альфа");
+        }
     }
 
     int StatusLoggerSink::draw()

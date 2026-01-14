@@ -20,21 +20,6 @@ void SelectableColor(ImU32 color) // Colors a cell in the table with the specifi
 
 namespace satdump
 {
-    namespace
-    {
-        image::Image prepareLayerForStack(const image::Image *source)
-        {
-            if (!source)
-                return {};
-            image::Image output = *source;
-            if (output.channels() < 3)
-                output.to_rgb();
-            if (output.depth() != 16)
-                output = output.to_depth(16);
-            return output;
-        }
-    }
-
     ViewerApplication::ViewerApplication()
         : Application("viewer")
     {
@@ -285,6 +270,15 @@ namespace satdump
         markLayerCompositeDirty();
     }
 
+    size_t ViewerApplication::getEnabledStackLayerCount() const
+    {
+        size_t count = 0;
+        for (size_t i = 0; i < kLayerCount; ++i)
+            if (layer_enabled[i] && layer_set.available[i])
+                ++count;
+        return count;
+    }
+
     ViewerApplication::LayerMode ViewerApplication::getLayerMode() const
     {
         return layer_mode;
@@ -303,26 +297,37 @@ namespace satdump
     {
         LayerSet new_layer_set{};
         const Products *new_source = nullptr;
+        uint64_t new_preview_revision = 0;
+        std::string run_id = selected_run_id;
+        bool run_changed = run_id != layer_run_id;
+        if (run_changed)
+        {
+            layer_run_id = run_id;
+            layer_run_epoch++;
+            if (layer_run_epoch == 0)
+                layer_run_epoch = 1;
+        }
 
         int default_layer_index = -1;
         if (handler)
         {
-            if (auto image_handler = dynamic_cast<ImageViewerHandler *>(handler.get()))
+            if (auto image_handler_local = dynamic_cast<ImageViewerHandler *>(handler.get()))
             {
-                new_source = image_handler->products;
-                default_layer_index = image_handler->active_channel_id;
-                if (image_handler->current_image.width() > 0)
+                new_source = image_handler_local->products;
+                default_layer_index = image_handler_local->active_channel_id;
+                if (image_handler_local->current_image.width() > 0)
                 {
-                    new_layer_set.preview = &image_handler->current_image;
+                    new_layer_set.preview = &image_handler_local->current_image;
                     new_layer_set.preview_available = true;
+                    new_preview_revision = image_handler_local->current_image_revision;
                 }
 
-                if (image_handler->products)
+                if (image_handler_local->products)
                 {
-                    size_t layer_count = std::min(image_handler->products->images.size(), kLayerCount);
+                    size_t layer_count = std::min(image_handler_local->products->images.size(), kLayerCount);
                     for (size_t i = 0; i < layer_count; ++i)
                     {
-                        new_layer_set.layers[i] = &image_handler->products->images[i].image;
+                        new_layer_set.layers[i] = &image_handler_local->products->images[i].image;
                         if (new_layer_set.layers[i])
                             new_layer_set.available[i] = new_layer_set.layers[i]->width() > 0;
                     }
@@ -333,11 +338,34 @@ namespace satdump
         bool source_changed = new_source != layer_products_source;
         bool availability_changed = new_layer_set.available != layer_set.available ||
             new_layer_set.preview_available != layer_set.preview_available;
+        bool preview_ptr_changed = new_layer_set.preview != layer_set.preview;
+        bool layers_ptr_changed = new_layer_set.layers != layer_set.layers;
+
+        for (size_t i = 0; i < kLayerCount; ++i)
+        {
+            if (!new_layer_set.available[i] || !new_layer_set.layers[i])
+            {
+                layer_revisions[i] = 0;
+                continue;
+            }
+            if (run_changed || new_layer_set.layers[i] != layer_set.layers[i] || layer_revisions[i] == 0)
+                layer_revisions[i] = layer_run_epoch;
+        }
+
+        if (new_layer_set.preview_available && new_layer_set.preview)
+        {
+            uint64_t preview_revision_value = std::max<uint64_t>(new_preview_revision, 1);
+            preview_revision = (layer_run_epoch << 32) | (preview_revision_value & 0xFFFFFFFFull);
+        }
+        else
+        {
+            preview_revision = 0;
+        }
 
         layer_set = new_layer_set;
         layer_products_source = new_source;
 
-        if (source_changed || availability_changed)
+        if (source_changed || availability_changed || preview_ptr_changed || layers_ptr_changed || run_changed)
         {
             if (!layer_set.preview_available)
                 preview_enabled = false;
@@ -393,7 +421,9 @@ namespace satdump
             last_layer_mode != layer_mode ||
             last_preview_enabled != preview_enabled ||
             last_layer_ptrs != layer_set.layers ||
-            last_preview_ptr != layer_set.preview;
+            last_layer_revisions != layer_revisions ||
+            last_preview_ptr != layer_set.preview ||
+            last_preview_revision != preview_revision;
 
         if (!layer_composite_dirty && !selection_changed)
             return;
@@ -401,52 +431,80 @@ namespace satdump
         layer_composite_dirty = false;
         last_layer_enabled = layer_enabled;
         last_layer_ptrs = layer_set.layers;
+        last_layer_revisions = layer_revisions;
         last_preview_ptr = layer_set.preview;
+        last_preview_revision = preview_revision;
         last_layer_mode = layer_mode;
         last_preview_enabled = preview_enabled;
 
-        image::Image output;
         if (layer_mode == LayerMode::Single)
         {
+            stack_layers_warning = false;
             int selected_index = resolveSingleLayerSelection();
             if (selected_index >= 0 && layer_set.layers[static_cast<size_t>(selected_index)])
             {
-                output = *layer_set.layers[static_cast<size_t>(selected_index)];
-                if (output.channels() < 3)
-                    output.to_rgb();
+                layer_view.plotOverlay = []() {};
+                layer_view.updateCached(layer_set.layers[static_cast<size_t>(selected_index)],
+                    layer_revisions[static_cast<size_t>(selected_index)],
+                    1.0f);
+            }
+            else
+            {
+                layer_view.plotOverlay = []() {};
+                layer_view.updateCached(nullptr, 0, 1.0f);
             }
         }
         else
         {
-            bool has_base = false;
-            image::Image base;
-            if (preview_enabled && layer_set.preview_available)
+            size_t enabled_count = getEnabledStackLayerCount();
+            stack_layers_warning = enabled_count > 3;
+            float overlay_alpha = stack_layers_warning ? 0.35f : 0.5f;
+
+            const image::Image *base_image = nullptr;
+            uint64_t base_revision = 0;
+            size_t base_layer_index = kLayerCount;
+            if (preview_enabled && layer_set.preview_available && layer_set.preview)
             {
-                base = prepareLayerForStack(layer_set.preview);
-                has_base = base.width() > 0;
+                base_image = layer_set.preview;
+                base_revision = preview_revision;
+            }
+            else
+            {
+                for (size_t i = 0; i < kLayerCount; ++i)
+                {
+                    if (layer_enabled[i] && layer_set.available[i] && layer_set.layers[i])
+                    {
+                        base_image = layer_set.layers[i];
+                        base_revision = layer_revisions[i];
+                        base_layer_index = i;
+                        break;
+                    }
+                }
             }
 
             for (size_t i = 0; i < kLayerCount; ++i)
             {
-                if (!layer_enabled[i] || !layer_set.available[i] || !layer_set.layers[i])
-                    continue;
-                image::Image overlay = prepareLayerForStack(layer_set.layers[i]);
-                if (!has_base)
-                {
-                    base = overlay;
-                    has_base = base.width() > 0;
-                }
+                if (layer_enabled[i] && layer_set.available[i] && layer_set.layers[i])
+                    stack_layer_views[i].updateCached(layer_set.layers[i], layer_revisions[i], overlay_alpha);
                 else
-                {
-                    base = image::merge_images_opacity(base, overlay, 0.5f);
-                }
+                    stack_layer_views[i].updateCached(nullptr, 0, overlay_alpha);
             }
-            if (has_base)
-                output = base;
-        }
 
-        layer_composite = output;
-        layer_view.update(layer_composite);
+            layer_view.plotOverlay = [this, base_layer_index]() {
+                for (size_t i = 0; i < kLayerCount; ++i)
+                {
+                    if (i == base_layer_index)
+                        continue;
+                    if (layer_enabled[i] && layer_set.available[i] && layer_set.layers[i])
+                        stack_layer_views[i].plotChunks();
+                }
+            };
+
+            if (base_image)
+                layer_view.updateCached(base_image, base_revision, 1.0f);
+            else
+                layer_view.updateCached(nullptr, 0, 1.0f);
+        }
     }
 
     void ViewerApplication::handleSwipePassNavigation(const ImRect &content_rect)
@@ -681,6 +739,11 @@ namespace satdump
                     if (dynamic_cast<ImageViewerHandler *>(handler.get()))
                     {
                         updateLayerComposite();
+                        if (layer_mode == LayerMode::Stack)
+                        {
+                            for (size_t i = 0; i < kLayerCount; ++i)
+                                stack_layer_views[i].syncTextures();
+                        }
                         layer_view.draw(content_size);
                     }
                     else

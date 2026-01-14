@@ -123,14 +123,22 @@ namespace satdump
 
         LayerSet layer_set;
         ImageViewWidget layer_view;
+        std::array<ImageViewWidget, kLayerCount> stack_layer_views;
         image::Image layer_composite;
         bool layer_composite_dirty = true;
+        std::array<uint64_t, kLayerCount> layer_revisions{};
+        uint64_t preview_revision = 0;
         std::array<const image::Image *, kLayerCount> last_layer_ptrs{};
+        std::array<uint64_t, kLayerCount> last_layer_revisions{};
         std::array<bool, kLayerCount> last_layer_enabled{};
         const image::Image *last_preview_ptr = nullptr;
+        uint64_t last_preview_revision = 0;
         LayerMode last_layer_mode = LayerMode::Single;
         bool last_preview_enabled = true;
         const Products *layer_products_source = nullptr;
+        std::string layer_run_id;
+        uint64_t layer_run_epoch = 1;
+        bool stack_layers_warning = false;
 
         bool swipe_tracking = false;
         ImVec2 swipe_start_pos = ImVec2(0.0f, 0.0f);
@@ -297,6 +305,8 @@ namespace satdump
         bool isPreviewAvailable() const;
         bool isPreviewEnabled() const;
         void setPreviewEnabled(bool enabled);
+        size_t getEnabledStackLayerCount() const;
+        bool shouldWarnAboutStackLayers() const { return stack_layers_warning; }
         LayerMode getLayerMode() const;
         void setLayerMode(LayerMode mode);
 
