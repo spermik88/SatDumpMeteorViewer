@@ -9,6 +9,7 @@
 #include "main_ui.h"
 #include "common/image/image_utils.h"
 #include "common/image/io.h"
+#include "common/ops_state.h"
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -314,6 +315,8 @@ namespace satdump
         const Products *new_source = nullptr;
         uint64_t new_preview_revision = 0;
         std::string run_id = selected_run_id;
+        if (ops::is_temp_run_dir(run_id))
+            run_id.clear();
         bool run_changed = run_id != layer_run_id;
         if (run_changed)
         {

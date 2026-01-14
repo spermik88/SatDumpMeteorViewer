@@ -30,6 +30,7 @@ namespace meteor
         bool locked = false;
         int errors[4];
         int cor;
+        bool first_valid_frame_event_sent = false;
 
         std::shared_ptr<viterbi::Viterbi27> viterbi;
 

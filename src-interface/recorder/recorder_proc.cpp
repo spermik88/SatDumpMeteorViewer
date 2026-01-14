@@ -3,10 +3,14 @@
 #include "main_ui.h"
 #include "logger.h"
 #include "processing.h"
+#include "common/ops_state.h"
+#include "core/plugin.h"
 #include <algorithm>
 #include <chrono>
 #include <cctype>
 #include <cstdlib>
+#include <filesystem>
+#include <stdexcept>
 
 #ifndef _MSC_VER
 #include <sys/statvfs.h>
@@ -23,6 +27,62 @@ namespace satdump
 #else
             setenv(key, value.c_str(), 1);
 #endif
+        }
+
+        std::string remap_output_path(const std::string &path,
+                                      const std::string &from_dir,
+                                      const std::string &to_dir)
+        {
+            if (from_dir.empty() || to_dir.empty())
+                return path;
+            if (path.rfind(from_dir, 0) != 0)
+                return path;
+            std::filesystem::path rel = std::filesystem::path(path).lexically_relative(from_dir);
+            if (rel.empty())
+                return path;
+            return (std::filesystem::path(to_dir) / rel).string();
+        }
+
+        bool prepare_live_output_dirs(const std::string &final_dir,
+                                      std::string &tmp_dir)
+        {
+            tmp_dir = ops::build_temp_run_dir(final_dir);
+            std::error_code ec;
+            if (std::filesystem::exists(tmp_dir, ec))
+            {
+                std::filesystem::remove_all(tmp_dir, ec);
+                if (ec)
+                {
+                    logger->warn("Failed to clean temp directory %s: %s", tmp_dir.c_str(), ec.message().c_str());
+                    return false;
+                }
+            }
+            std::filesystem::create_directories(tmp_dir, ec);
+            if (ec)
+            {
+                logger->error("Failed to create temp directory %s: %s", tmp_dir.c_str(), ec.message().c_str());
+                return false;
+            }
+            return true;
+        }
+
+        bool finalize_live_output_dir(const std::string &tmp_dir,
+                                      const std::string &final_dir)
+        {
+            if (tmp_dir.empty() || final_dir.empty() || tmp_dir == final_dir)
+                return true;
+
+            std::error_code ec;
+            std::filesystem::rename(tmp_dir, final_dir, ec);
+            if (ec)
+            {
+                logger->error("Failed to finalize run directory %s -> %s: %s",
+                              tmp_dir.c_str(),
+                              final_dir.c_str(),
+                              ec.message().c_str());
+                return false;
+            }
+            return true;
         }
     }
 
@@ -329,11 +389,20 @@ namespace satdump
             try
             {
                 if (automated_live_output_dir)
-                    pipeline_output_dir = prepareAutomatedPipelineFolder(time(0), source_ptr->d_frequency, pipeline_selector.selected_pipeline.name);
+                    pipeline_output_dir = prepareAutomatedPipelineFolder(time(0), source_ptr->d_frequency, pipeline_selector.selected_pipeline.name, "", false);
                 else
                     pipeline_output_dir = pipeline_selector.outputdirselect.getPath();
 
-                live_pipeline = std::make_unique<LivePipeline>(pipeline_selector.selected_pipeline, pipeline_params, pipeline_output_dir);
+                if (!prepare_live_output_dirs(pipeline_output_dir, pipeline_output_dir_tmp))
+                    throw std::runtime_error("Failed to prepare live output directory");
+
+                pipeline_run_id = ops::normalize_run_id(std::filesystem::path(pipeline_output_dir).filename().string());
+                ops::set_live_run(pipeline_run_id,
+                                  pipeline_output_dir_tmp,
+                                  pipeline_output_dir,
+                                  pipeline_params["start_timestamp"].get<double>());
+
+                live_pipeline = std::make_unique<LivePipeline>(pipeline_selector.selected_pipeline, pipeline_params, pipeline_output_dir_tmp);
                 splitter->reset_output("live");
                 live_pipeline->start(splitter->get_output("live"), ui_thread_pool);
                 splitter->set_enabled("live", true);
@@ -345,6 +414,7 @@ namespace satdump
             {
                 error.set_message(style::theme.red, e.what());
                 logger->error(e.what());
+                ops::set_pipeline_active(false);
                 set_rx_status("error");
             }
         }
@@ -365,18 +435,25 @@ namespace satdump
             live_pipeline->stop();
             is_stopping_processing = is_processing = false;
 
-            if (config::main_cfg["user_interface"]["finish_processing_after_live"]["value"].get<bool>() && live_pipeline->getOutputFiles().size() > 0)
+            std::vector<std::string> output_files = live_pipeline->getOutputFiles();
+            eventBus->fire_event<ops::RunFinalizedEvent>({pipeline_run_id, pipeline_output_dir});
+
+            bool finalized = finalize_live_output_dir(pipeline_output_dir_tmp, pipeline_output_dir);
+            std::string output_dir_for_processing = finalized ? pipeline_output_dir : pipeline_output_dir_tmp;
+
+            if (config::main_cfg["user_interface"]["finish_processing_after_live"]["value"].get<bool>() && !output_files.empty())
             {
                 Pipeline pipeline = pipeline_selector.selected_pipeline;
-                std::string input_file = live_pipeline->getOutputFiles()[0];
+                std::string input_file = remap_output_path(output_files[0], pipeline_output_dir_tmp, output_dir_for_processing);
                 int start_level = pipeline.live_cfg.normal_live[pipeline.live_cfg.normal_live.size() - 1].first;
                 std::string input_level = pipeline.steps[start_level].level_name;
                 ui_thread_pool.push([=](int)
-                                    { processing::process(pipeline, input_level, input_file, pipeline_output_dir, pipeline_params); });
+                                    { processing::process(pipeline, input_level, input_file, output_dir_for_processing, pipeline_params); });
             }
 
             live_pipeline.reset();
-            processing::enforce_images_disk_limit(pipeline_output_dir);
+            processing::enforce_images_disk_limit(output_dir_for_processing);
+            ops::set_pipeline_active(false);
             set_rx_status("stopped");
         }
     }

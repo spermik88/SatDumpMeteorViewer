@@ -8,6 +8,10 @@
 #include "common/codings/correlator.h"
 #include "common/codings/reedsolomon/reedsolomon.h"
 #include "deint.h"
+#include "common/ops_state.h"
+#include "core/plugin.h"
+
+#include <filesystem>
 
 #define BUFFER_SIZE 8192
 #define FRAME_SIZE 1024
@@ -121,6 +125,15 @@ namespace meteor
         logger->info("Decoding to " + d_output_file_hint + ".cadu");
 
         time_t lastTime = 0;
+        auto fire_first_valid_frame = [this]()
+        {
+            if (first_valid_frame_event_sent)
+                return;
+            std::string run_id = satdump::ops::normalize_run_id(
+                std::filesystem::path(d_output_file_hint).parent_path().filename().string());
+            satdump::eventBus->fire_event<satdump::ops::FirstValidFrameEvent>({run_id, "meteor_lrpt_decoder"});
+            first_valid_frame_event_sent = true;
+        };
 
         if (m2x_mode)
         {
@@ -216,6 +229,7 @@ namespace meteor
 
                     if (errors[0] >= 0 && errors[1] >= 0 && errors[2] >= 0 && errors[3] >= 0)
                     {
+                        fire_first_valid_frame();
                         // Write it out
                         if (output_data_type == DATA_STREAM)
                             output_fifo->write((uint8_t *)cadu, 1024);
@@ -310,6 +324,7 @@ namespace meteor
                 // Write it out if it's not garbage
                 if (errors[0] >= 0 && errors[1] >= 0 && errors[2] >= 0 && errors[3] >= 0)
                 {
+                    fire_first_valid_frame();
                     data_out.put(0x1a);
                     data_out.put(0xcf);
                     data_out.put(0xfc);

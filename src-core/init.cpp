@@ -11,6 +11,7 @@
 #include "common/tracking/tle.h"
 #include "products/products.h"
 #include "imgui/pfd/portable-file-dialogs.h"
+#include "common/ops_state.h"
 
 #include "core/opencl.h"
 
@@ -85,6 +86,7 @@ namespace satdump
         }
 
         loadPlugins();
+        ops::register_event_handlers();
 
         // Let plugins know we started
         eventBus->fire_event<config::RegisterPluginConfigHandlersEvent>({config::plugin_config_handlers});

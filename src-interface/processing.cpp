@@ -17,6 +17,8 @@
 #include "main_ui.h"
 #include "common/image/image_utils.h"
 #include "common/image/io.h"
+#include "common/ops_state.h"
+#include "core/plugin.h"
 #include "nlohmann/json_utils.h"
 
 namespace satdump
@@ -279,6 +281,8 @@ namespace satdump
             {
                 if (!entry.is_directory())
                     continue;
+                if (ops::is_temp_run_dir(entry.path().filename().string()))
+                    continue;
 
                 RunEntry run_entry;
                 run_entry.path = entry.path();
@@ -310,6 +314,7 @@ namespace satdump
                     logger->warn("Failed to remove archive directory %s: %s", entry.path.string().c_str(), ec.message().c_str());
                     continue;
                 }
+                eventBus->fire_event<ops::FifoDeleteEvent>({entry.run_id, entry.path.string()});
                 remove_run_from_index(base_path, entry.run_id);
                 if (total_size >= entry.size)
                     total_size -= entry.size;
