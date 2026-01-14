@@ -1,4 +1,5 @@
 #include "io.h"
+#include <filesystem>
 #include <fstream>
 #include "logger.h"
 #include "core/config.h"
@@ -32,23 +33,53 @@ namespace image
             load_png(img, buffer, size);
     }
 
+    namespace
+    {
+        bool should_atomic_save(const std::filesystem::path &path)
+        {
+            if (!path.has_filename())
+                return false;
+            const std::string stem = path.stem().string();
+            return stem == "preview" || stem == "layers" || stem == "thumb";
+        }
+    }
+
     void save_img(Image &img, std::string file, bool fast)
     {
         if (!append_ext(&file))
             return;
+
         logger->info("Saving " + file + "...");
+
+        std::filesystem::path target_path(file);
+        const bool atomic_write = should_atomic_save(target_path);
+        const std::string write_path = atomic_write ? (file + ".tmp") : file;
+
         if (file.find(".png") != std::string::npos)
-            save_png(img, file, fast);
+            save_png(img, write_path, fast);
         else if (file.find(".jpeg") != std::string::npos || file.find(".jpg") != std::string::npos)
-            save_jpeg(img, file);
+            save_jpeg(img, write_path);
         else if (file.find(".j2k") != std::string::npos)
-            save_j2k(img, file);
+            save_j2k(img, write_path);
         else if ((file.find(".ppm") != std::string::npos) || (file.find(".pgm") != std::string::npos) || (file.find(".pbm") != std::string::npos))
-            save_pbm(img, file);
+            save_pbm(img, write_path);
         else if ((file.find(".tif") != std::string::npos) || (file.find(".gtif") != std::string::npos) || (file.find(".tiff") != std::string::npos))
-            save_tiff(img, file);
+            save_tiff(img, write_path);
         else if (file.find(".qoi") != std::string::npos)
-            save_qoi(img, file);
+            save_qoi(img, write_path);
+
+        if (atomic_write)
+        {
+            std::error_code ec;
+            std::filesystem::rename(write_path, file, ec);
+            if (ec)
+            {
+                std::filesystem::remove(file, ec);
+                std::filesystem::rename(write_path, file, ec);
+                if (ec)
+                    logger->error("Failed to rename temp image %s to %s: %s", write_path.c_str(), file.c_str(), ec.message().c_str());
+            }
+        }
     }
 
     // Append selected file extension
