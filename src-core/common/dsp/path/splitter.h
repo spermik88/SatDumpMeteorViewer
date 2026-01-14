@@ -1,6 +1,8 @@
 #pragma once
 
 #include "common/dsp/block.h"
+#include <atomic>
+#include <chrono>
 #include <map>
 #include <string>
 
@@ -35,6 +37,8 @@ namespace dsp
 
         std::map<std::string, VfoCFG> vfo_outputs;
 
+        std::atomic<int64_t> last_input_ns{0};
+
     public:
         // Copy outputs
         void add_output(std::string id);
@@ -52,6 +56,8 @@ namespace dsp
 
         // Main output
         void set_main_enabled(bool enable);
+
+        double seconds_since_last_input() const;
 
     public:
         SplitterBlock(std::shared_ptr<dsp::stream<complex_t>> input);

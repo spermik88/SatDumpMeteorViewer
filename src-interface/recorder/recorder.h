@@ -148,6 +148,11 @@ namespace satdump
 
         bool source_restart_pending = false;
         std::chrono::steady_clock::time_point source_restart_time;
+        int source_restart_backoff_seconds = 3;
+        bool pipeline_restart_pending = false;
+
+        std::string sdr_status = "offline";
+        std::string rx_status = "stopped";
 
         // Debug
         widgets::ConstellationViewer *constellation_debug = nullptr;
@@ -192,6 +197,9 @@ namespace satdump
 
         void try_init_tracking_widget();
         void handle_source_restart();
+        bool is_meteor_pipeline_active() const;
+        void set_sdr_status(const std::string &status);
+        void set_rx_status(const std::string &status);
 
         uint64_t get_samplerate()
         {

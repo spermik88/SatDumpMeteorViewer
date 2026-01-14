@@ -1,4 +1,5 @@
 #include "splitter.h"
+#include <chrono>
 #include <volk/volk.h>
 
 namespace dsp
@@ -106,6 +107,18 @@ namespace dsp
         state_mutex.unlock();
     }
 
+    double SplitterBlock::seconds_since_last_input() const
+    {
+        int64_t last_ns = last_input_ns.load(std::memory_order_relaxed);
+        if (last_ns == 0)
+            return -1.0;
+
+        auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                          std::chrono::steady_clock::now().time_since_epoch())
+                          .count();
+        return static_cast<double>(now_ns - last_ns) / 1e9;
+    }
+
     void SplitterBlock::work()
     {
         int nsamples = input_stream->read();
@@ -114,6 +127,11 @@ namespace dsp
             input_stream->flush();
             return;
         }
+
+        last_input_ns.store(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                std::chrono::steady_clock::now().time_since_epoch())
+                                .count(),
+                            std::memory_order_relaxed);
 
         state_mutex.lock();
 

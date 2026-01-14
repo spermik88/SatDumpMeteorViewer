@@ -220,6 +220,9 @@ namespace satdump
                                                                             if (fft_sizes_lut[i] == fft_size)
                                                                                 selected_fft_size = i;
                                                                     } });
+
+        set_sdr_status(is_started ? "online" : "offline");
+        set_rx_status(is_processing ? "running" : "stopped");
     }
 
     RecorderApplication::~RecorderApplication()
