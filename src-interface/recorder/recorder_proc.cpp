@@ -3,7 +3,10 @@
 #include "main_ui.h"
 #include "logger.h"
 #include "processing.h"
+#include <algorithm>
 #include <chrono>
+#include <cctype>
+#include <cstdlib>
 
 #ifndef _MSC_VER
 #include <sys/statvfs.h>
@@ -11,6 +14,18 @@
 
 namespace satdump
 {
+    namespace
+    {
+        void set_status_env(const char *key, const std::string &value)
+        {
+#ifdef _WIN32
+            _putenv_s(key, value.c_str());
+#else
+            setenv(key, value.c_str(), 1);
+#endif
+        }
+    }
+
     nlohmann::json RecorderApplication::serialize_config()
     {
         nlohmann::json out;
@@ -106,12 +121,14 @@ namespace satdump
             splitter->input_stream = current_decimation > 1 ? decim_ptr->output_stream : source_ptr->output_stream;
             splitter->start();
             is_started = true;
+            set_sdr_status("online");
         }
         catch (std::runtime_error &e)
         {
             source_ptr->set_status(dsp::DSPSampleSource::SourceStatus::Error);
             sdr_error.set_message(style::theme.red, e.what());
             logger->error(e.what());
+            set_sdr_status("error");
         }
     }
 
@@ -126,6 +143,7 @@ namespace satdump
         source_ptr->stop();
         is_started = false;
         source_ptr->set_status(dsp::DSPSampleSource::SourceStatus::Offline);
+        set_sdr_status("offline");
         config::main_cfg["user"]["recorder_sdr_settings"]["last_used_sdr"] = sources[sdr_select_id].name;
         config::main_cfg["user"]["recorder_sdr_settings"][sources[sdr_select_id].name] = source_ptr->get_settings();
         config::main_cfg["user"]["recorder_sdr_settings"][sources[sdr_select_id].name]["samplerate"] = source_ptr->get_samplerate();
@@ -135,27 +153,97 @@ namespace satdump
         config::saveUserConfig();
     }
 
+    bool RecorderApplication::is_meteor_pipeline_active() const
+    {
+        if (!is_processing || !live_pipeline)
+            return false;
+
+        std::string name = pipeline_selector.selected_pipeline.name;
+        std::string readable = pipeline_selector.selected_pipeline.readable_name;
+        std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c)
+                       { return static_cast<char>(std::tolower(c)); });
+        std::transform(readable.begin(), readable.end(), readable.begin(), [](unsigned char c)
+                       { return static_cast<char>(std::tolower(c)); });
+
+        return (name.rfind("meteor_", 0) == 0) || (readable.find("meteor") != std::string::npos);
+    }
+
+    void RecorderApplication::set_sdr_status(const std::string &status)
+    {
+        if (sdr_status == status)
+            return;
+
+        sdr_status = status;
+        set_status_env("SDR_STATUS", status);
+    }
+
+    void RecorderApplication::set_rx_status(const std::string &status)
+    {
+        if (rx_status == status)
+            return;
+
+        rx_status = status;
+        set_status_env("RX_STATUS", status);
+    }
+
     void RecorderApplication::handle_source_restart()
     {
-        if (!is_processing || !source_ptr)
+        if (!source_ptr)
             return;
 
         auto status = source_ptr->get_status();
-        if (status == dsp::DSPSampleSource::SourceStatus::Online)
+        bool sdr_online = status == dsp::DSPSampleSource::SourceStatus::Online;
+        bool no_iq_timeout = false;
+        if (is_started && splitter)
         {
+            double no_iq_seconds = splitter->seconds_since_last_input();
+            no_iq_timeout = no_iq_seconds > 5.0;
+        }
+
+        if (sdr_online && !no_iq_timeout)
+        {
+            if (is_processing)
+                set_rx_status("running");
+            else
+                set_rx_status("stopped");
+
+            set_sdr_status("online");
             source_restart_pending = false;
+            pipeline_restart_pending = false;
+            source_restart_backoff_seconds = 3;
             return;
         }
 
         auto now = std::chrono::steady_clock::now();
         if (!source_restart_pending)
         {
-            logger->warn("SDR source is offline/error, restarting...");
+            if (no_iq_timeout)
+            {
+                logger->warn("No IQ data detected for over 5 seconds, restarting...");
+                set_rx_status("no_iq");
+            }
+            else
+            {
+                logger->warn("SDR source is offline/error, restarting...");
+                if (status == dsp::DSPSampleSource::SourceStatus::Offline)
+                    set_sdr_status("offline");
+                else if (status == dsp::DSPSampleSource::SourceStatus::Error)
+                    set_sdr_status("error");
+            }
+
             if (is_started)
                 stop();
+            if (is_meteor_pipeline_active())
+            {
+                pipeline_restart_pending = true;
+                stop_processing();
+                set_rx_status("restarting");
+            }
+
             source_ptr->close();
             source_restart_pending = true;
-            source_restart_time = now + std::chrono::seconds(3);
+            set_sdr_status("restarting");
+            source_restart_time = now + std::chrono::seconds(source_restart_backoff_seconds);
             return;
         }
 
@@ -169,6 +257,13 @@ namespace satdump
             if (source_ptr->get_status() == dsp::DSPSampleSource::SourceStatus::Online)
             {
                 source_restart_pending = false;
+                source_restart_backoff_seconds = 3;
+                set_sdr_status("online");
+                if (pipeline_restart_pending)
+                {
+                    pipeline_restart_pending = false;
+                    start_processing();
+                }
                 return;
             }
         }
@@ -177,9 +272,12 @@ namespace satdump
             source_ptr->set_status(dsp::DSPSampleSource::SourceStatus::Error);
             sdr_error.set_message(style::theme.red, e.what());
             logger->error("Failed to restart SDR source: %s", e.what());
+            set_sdr_status("error");
         }
 
-        source_restart_time = now + std::chrono::seconds(3);
+        source_restart_backoff_seconds = std::min(source_restart_backoff_seconds * 2, 60);
+        source_restart_time = now + std::chrono::seconds(source_restart_backoff_seconds);
+        set_sdr_status("restarting");
     }
 
     void RecorderApplication::try_load_sdr_settings()
@@ -241,16 +339,19 @@ namespace satdump
                 splitter->set_enabled("live", true);
 
                 is_processing = true;
+                set_rx_status("running");
             }
             catch (std::runtime_error &e)
             {
                 error.set_message(style::theme.red, e.what());
                 logger->error(e.what());
+                set_rx_status("error");
             }
         }
         else
         {
             error.set_message(style::theme.red, "Please select a valid output directory!");
+            set_rx_status("error");
         }
     }
 
@@ -276,6 +377,7 @@ namespace satdump
 
             live_pipeline.reset();
             processing::enforce_images_disk_limit(pipeline_output_dir);
+            set_rx_status("stopped");
         }
     }
 
