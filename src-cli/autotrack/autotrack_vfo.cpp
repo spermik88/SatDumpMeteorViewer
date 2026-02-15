@@ -147,7 +147,6 @@ void AutoTrackApp::del_vfo(std::string id)
 
         if (it->selected_pipeline.name != "")
         {
-            satdump::eventBus->fire_event<satdump::ops::RunFinalizedEvent>({it->run_id, it->output_dir});
             std::error_code ec;
             std::filesystem::rename(it->output_dir_tmp, it->output_dir, ec);
             if (ec)
@@ -156,6 +155,8 @@ void AutoTrackApp::del_vfo(std::string id)
                               it->output_dir.c_str(),
                               ec.message().c_str());
             std::string output_dir_for_processing = ec ? it->output_dir_tmp : it->output_dir;
+            if (!ec)
+                satdump::eventBus->fire_event<satdump::ops::RunFinalizedEvent>({it->run_id, it->output_dir});
 
             if (d_settings.contains("finish_processing") && d_settings["finish_processing"].get<bool>() && !output_files.empty())
             {

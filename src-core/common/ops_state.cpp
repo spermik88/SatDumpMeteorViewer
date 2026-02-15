@@ -11,60 +11,58 @@ namespace satdump::ops
     {
         std::mutex ops_state_mutex;
         OpsStateSnapshot ops_state;
-        bool handlers_registered = false;
+        std::once_flag handlers_once;
     }
 
     void register_event_handlers()
     {
-        if (handlers_registered)
-            return;
-        handlers_registered = true;
+        std::call_once(handlers_once, []()
+                       {
+                           eventBus->register_handler<FirstValidFrameEvent>([](FirstValidFrameEvent evt)
+                                                                            {
+                                                                                std::string run_id = normalize_run_id(evt.run_id);
+                                                                                {
+                                                                                    std::lock_guard<std::mutex> lock(ops_state_mutex);
+                                                                                    ops_state.last_event = "first_valid_frame";
+                                                                                    if (ops_state.live_run_id.empty() || ops_state.live_run_id == run_id)
+                                                                                        ops_state.first_valid_frame = true;
+                                                                                }
+                                                                                logger->info("Event first_valid_frame: run_id=%s source=%s",
+                                                                                             run_id.c_str(),
+                                                                                             evt.source.c_str());
+                                                                            });
 
-        eventBus->register_handler<FirstValidFrameEvent>([](FirstValidFrameEvent evt)
-                                                         {
-                                                             std::string run_id = normalize_run_id(evt.run_id);
-                                                             {
-                                                                 std::lock_guard<std::mutex> lock(ops_state_mutex);
-                                                                 ops_state.last_event = "first_valid_frame";
-                                                                 if (ops_state.live_run_id.empty() || ops_state.live_run_id == run_id)
-                                                                     ops_state.first_valid_frame = true;
-                                                             }
-                                                             logger->info("Event first_valid_frame: run_id=%s source=%s",
-                                                                          run_id.c_str(),
-                                                                          evt.source.c_str());
-                                                         });
+                           eventBus->register_handler<RunFinalizedEvent>([](RunFinalizedEvent evt)
+                                                                         {
+                                                                             std::string run_id = normalize_run_id(evt.run_id);
+                                                                             {
+                                                                                 std::lock_guard<std::mutex> lock(ops_state_mutex);
+                                                                                 ops_state.last_event = "run_finalized";
+                                                                                 ops_state.last_finalized_run_id = run_id;
+                                                                                 if (ops_state.live_run_id.empty() || ops_state.live_run_id == run_id)
+                                                                                 {
+                                                                                     ops_state.run_finalized = true;
+                                                                                     ops_state.pipeline_active = false;
+                                                                                 }
+                                                                             }
+                                                                             logger->info("Event run_finalized: run_id=%s output_dir=%s",
+                                                                                          run_id.c_str(),
+                                                                                          evt.output_dir.c_str());
+                                                                         });
 
-        eventBus->register_handler<RunFinalizedEvent>([](RunFinalizedEvent evt)
-                                                      {
-                                                          std::string run_id = normalize_run_id(evt.run_id);
-                                                          {
-                                                              std::lock_guard<std::mutex> lock(ops_state_mutex);
-                                                              ops_state.last_event = "run_finalized";
-                                                              ops_state.last_finalized_run_id = run_id;
-                                                              if (ops_state.live_run_id.empty() || ops_state.live_run_id == run_id)
-                                                              {
-                                                                  ops_state.run_finalized = true;
-                                                                  ops_state.pipeline_active = false;
-                                                              }
-                                                          }
-                                                          logger->info("Event run_finalized: run_id=%s output_dir=%s",
-                                                                       run_id.c_str(),
-                                                                       evt.output_dir.c_str());
-                                                      });
-
-        eventBus->register_handler<FifoDeleteEvent>([](FifoDeleteEvent evt)
-                                                    {
-                                                        std::string run_id = normalize_run_id(evt.run_id);
-                                                        {
-                                                            std::lock_guard<std::mutex> lock(ops_state_mutex);
-                                                            ops_state.last_event = "fifo_delete";
-                                                            ops_state.last_deleted_run_id = run_id;
-                                                            ops_state.fifo_delete = true;
-                                                        }
-                                                        logger->info("Event fifo_delete: run_id=%s output_dir=%s",
-                                                                     run_id.c_str(),
-                                                                     evt.output_dir.c_str());
-                                                    });
+                           eventBus->register_handler<FifoDeleteEvent>([](FifoDeleteEvent evt)
+                                                                       {
+                                                                           std::string run_id = normalize_run_id(evt.run_id);
+                                                                           {
+                                                                               std::lock_guard<std::mutex> lock(ops_state_mutex);
+                                                                               ops_state.last_event = "fifo_delete";
+                                                                               ops_state.last_deleted_run_id = run_id;
+                                                                               ops_state.fifo_delete = true;
+                                                                           }
+                                                                           logger->info("Event fifo_delete: run_id=%s output_dir=%s",
+                                                                                        run_id.c_str(),
+                                                                                        evt.output_dir.c_str());
+                                                                       }); });
     }
 
     OpsStateSnapshot get_state()
@@ -86,6 +84,7 @@ namespace satdump::ops
         ops_state.pipeline_active = true;
         ops_state.first_valid_frame = false;
         ops_state.run_finalized = false;
+        ops_state.fifo_delete = false;
     }
 
     void set_pipeline_active(bool active)

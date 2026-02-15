@@ -13,7 +13,7 @@ void AutoTrackApp::start_processing()
     if (is_processing)
         return;
 
-    live_pipeline_mtx.lock();
+    std::lock_guard<std::mutex> lock(live_pipeline_mtx);
     logger->trace("Start pipeline...");
     pipeline_params["samplerate"] = get_samplerate();
     pipeline_params["baseband_format"] = "cf32";
@@ -50,21 +50,19 @@ void AutoTrackApp::start_processing()
         satdump::ops::set_pipeline_active(false);
     }
 
-    live_pipeline_mtx.unlock();
 }
 
 void AutoTrackApp::stop_processing()
 {
     if (is_processing)
     {
-        live_pipeline_mtx.lock();
+        std::lock_guard<std::mutex> lock(live_pipeline_mtx);
         logger->trace("Stop pipeline...");
         is_processing = false;
         splitter->set_enabled("live", false);
         live_pipeline->stop();
 
         std::vector<std::string> output_files = live_pipeline->getOutputFiles();
-        satdump::eventBus->fire_event<satdump::ops::RunFinalizedEvent>({pipeline_run_id, pipeline_output_dir});
         std::error_code ec;
         std::filesystem::rename(pipeline_output_dir_tmp, pipeline_output_dir, ec);
         if (ec)
@@ -73,6 +71,8 @@ void AutoTrackApp::stop_processing()
                           pipeline_output_dir.c_str(),
                           ec.message().c_str());
         std::string output_dir_for_processing = ec ? pipeline_output_dir_tmp : pipeline_output_dir;
+        if (!ec)
+            satdump::eventBus->fire_event<satdump::ops::RunFinalizedEvent>({pipeline_run_id, pipeline_output_dir});
 
         if (d_settings.contains("finish_processing") && d_settings["finish_processing"].get<bool>() && !output_files.empty())
         {
@@ -95,7 +95,6 @@ void AutoTrackApp::stop_processing()
         }
 
         live_pipeline.reset();
-        live_pipeline_mtx.unlock();
     }
 }
 

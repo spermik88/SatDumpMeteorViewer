@@ -194,9 +194,10 @@ namespace satdump
 
             if (it->selected_pipeline.name != "")
             {
-                eventBus->fire_event<ops::RunFinalizedEvent>({it->run_id, it->output_dir});
                 bool finalized = finalize_live_output_dir(it->output_dir_tmp, it->output_dir);
                 std::string output_dir_for_processing = finalized ? it->output_dir : it->output_dir_tmp;
+                if (finalized)
+                    eventBus->fire_event<ops::RunFinalizedEvent>({it->run_id, it->output_dir});
 
                 if (config::main_cfg["user_interface"]["finish_processing_after_live"]["value"].get<bool>() && !output_files.empty())
                 {
