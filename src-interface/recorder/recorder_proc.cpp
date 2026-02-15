@@ -436,10 +436,11 @@ namespace satdump
             is_stopping_processing = is_processing = false;
 
             std::vector<std::string> output_files = live_pipeline->getOutputFiles();
-            eventBus->fire_event<ops::RunFinalizedEvent>({pipeline_run_id, pipeline_output_dir});
 
             bool finalized = finalize_live_output_dir(pipeline_output_dir_tmp, pipeline_output_dir);
             std::string output_dir_for_processing = finalized ? pipeline_output_dir : pipeline_output_dir_tmp;
+            if (finalized)
+                eventBus->fire_event<ops::RunFinalizedEvent>({pipeline_run_id, pipeline_output_dir});
 
             if (config::main_cfg["user_interface"]["finish_processing_after_live"]["value"].get<bool>() && !output_files.empty())
             {
