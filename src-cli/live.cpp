@@ -219,10 +219,29 @@ int main_live(int argc, char *argv[])
                 if (abs(final_shift) > (samplerate / 2))
                 {
                     logger->error("Frequency shift for VFO %s is outside of samplerate range!", cfg.key().c_str());
-                    exit(1);
+                    source_ptr->stop();
+                    splitter_vfo->stop();
+                    for (auto &e : all_pipelines)
+                    {
+                        e.second->stop();
+                        splitter_vfo->del_vfo(e.first);
+                    }
+                    return 1;
                 }
 
                 std::optional<satdump::Pipeline> pipeline = satdump::getPipelineFromName(vpipeline);
+                if (!pipeline.has_value())
+                {
+                    logger->error("Pipeline %s does not exist!", vpipeline.c_str());
+                    source_ptr->stop();
+                    splitter_vfo->stop();
+                    for (auto &e : all_pipelines)
+                    {
+                        e.second->stop();
+                        splitter_vfo->del_vfo(e.first);
+                    }
+                    return 1;
+                }
                 vparams["baseband_format"] = "cf32";
                 vparams["buffer_size"] = dsp::STREAM_BUFFER_SIZE; // This is required, as we WILL go over the (usually) default 8192 size
                 vparams["start_timestamp"] = (double)time(0);     // Some pipelines need this

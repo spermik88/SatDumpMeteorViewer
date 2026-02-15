@@ -5,6 +5,7 @@
 #include <nng/supplemental/util/platform.h>
 #include <functional>
 #include <string>
+#include <vector>
 
 // Webserver for stats
 namespace webserver
