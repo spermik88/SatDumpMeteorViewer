@@ -2,19 +2,18 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
 android {
-    compileSdkVersion 27
-    buildToolsVersion "30.0.3"
+    namespace "org.satdump.SatDump"
+    compileSdk 34
     ndkVersion "25.2.9519653"
 
-    lintOptions {
+    lint {
         disable 'ExpiredTargetSdkVersion'
     }
 
     defaultConfig {
         applicationId "org.satdump.SatDump"
-        namespace "org.satdump.SatDump"
-        minSdkVersion 26
-        targetSdkVersion 27
+        minSdk 26
+        targetSdk 34
         versionCode 9
         versionName "1.2.3"
     }
@@ -30,7 +29,7 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
-    
+
     packagingOptions {
         jniLibs {
             useLegacyPackaging = true
@@ -38,7 +37,7 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget="1.8"
+        jvmTarget = "1.8"
     }
 
     externalNativeBuild {
@@ -54,7 +53,7 @@ android {
     }
 }
 
-task deleteTempAssets (type: Delete) {
+task deleteTempAssets(type: Delete) {
     delete 'assets'
 }
 
@@ -84,8 +83,8 @@ repositories {
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
-    implementation 'com.android.support:appcompat-v7:27.1.1'
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+    implementation 'androidx.appcompat:appcompat:1.7.0'
 }
 
 copyResources.dependsOn deleteTempAssets
