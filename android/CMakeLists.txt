@@ -20,8 +20,27 @@ set(CMAKE_C_FLAGS_DEBUG "-O3")
 # ##########################################################################################################################################
 include_directories(deps/output/${ANDROID_ABI}/include)
 
+set(ANDROID_DEPS_DIR ${PROJECT_SOURCE_DIR}/deps)
+set(ANDROID_DEPS_LIB_DIR ${ANDROID_DEPS_DIR}/output/${ANDROID_ABI}/lib)
+
+if(NOT EXISTS ${ANDROID_DEPS_DIR}/build.sh)
+  message(FATAL_ERROR
+    "Android dependencies are missing (${ANDROID_DEPS_DIR}).\n"
+    "Run: git submodule update --init android/deps\n"
+    "Then build them: cd android/deps && sh build.sh"
+  )
+endif()
+
+if(NOT EXISTS ${ANDROID_DEPS_LIB_DIR})
+  message(FATAL_ERROR
+    "Android dependency libraries were not built for ABI ${ANDROID_ABI}.\n"
+    "Missing directory: ${ANDROID_DEPS_LIB_DIR}\n"
+    "Run: cd android/deps && sh build.sh"
+  )
+endif()
+
 # LIBVOLK
-set(VOLK_SEARCH_PATH ${PROJECT_SOURCE_DIR}/deps/output/${ANDROID_ABI}/lib)
+set(VOLK_SEARCH_PATH ${ANDROID_DEPS_LIB_DIR})
 find_library(VOLK_LIBRARY
   NAMES volk volk_static
   PATHS ${VOLK_SEARCH_PATH}
@@ -29,7 +48,10 @@ find_library(VOLK_LIBRARY
 )
 
 if(NOT VOLK_LIBRARY)
-  message(FATAL_ERROR "VOLK library not found in ${VOLK_SEARCH_PATH}. Expected one of: libvolk.a, libvolk.so, libvolk_static.a")
+  message(FATAL_ERROR
+    "VOLK library not found in ${VOLK_SEARCH_PATH}. Expected one of: libvolk.a, libvolk.so, libvolk_static.a\n"
+    "If android/deps was not built yet, run: cd android/deps && sh build.sh"
+  )
 endif()
 
 add_library(volk UNKNOWN IMPORTED)
