@@ -11,33 +11,22 @@ import android.content.res.AssetManager
 import java.io.*
 import java.util.concurrent.atomic.AtomicBoolean
 
-import android.content.Intent;
-import android.app.Activity;
-import android.net.Uri;
-
-import RealPathUtil;
-
-import android.Manifest;
-import android.support.v4.content.PermissionChecker;
-import android.support.v4.app.ActivityCompat;
-import android.content.pm.PackageManager;
-import android.provider.DocumentsContract;
-
-import android.content.BroadcastReceiver;
-import android.app.PendingIntent;
-import android.content.IntentFilter;
-
-import android.view.View;
-import android.view.ViewGroup;
-import android.view.Window;
-
-import android.widget.RelativeLayout;
-import android.widget.EditText;
-import android.text.TextWatcher;
-import android.text.Editable;
-import android.text.InputType;
-
-import android.view.WindowManager;
+import android.Manifest
+import android.content.BroadcastReceiver
+import android.content.Intent
+import android.content.IntentFilter
+import android.net.Uri
+import android.provider.DocumentsContract
+import android.text.Editable
+import android.text.InputType
+import android.text.TextWatcher
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
+import android.widget.EditText
+import android.widget.RelativeLayout
+import androidx.core.app.ActivityCompat
+import androidx.core.content.PermissionChecker
 
 // Extension on intent
 fun Intent?.getFilePath(context: Context): String {
