@@ -16,6 +16,12 @@ android {
         targetSdk 34
         versionCode 9
         versionName "1.2.3"
+
+        // android/deps ships prebuilt libs only for ARM ABIs by default.
+        // Limiting ABIs avoids CMake configure failures for x86/x86_64 in IDE sync.
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
     }
 
     buildTypes {
