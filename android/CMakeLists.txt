@@ -21,8 +21,19 @@ set(CMAKE_C_FLAGS_DEBUG "-O3")
 include_directories(deps/output/${ANDROID_ABI}/include)
 
 # LIBVOLK
-add_library(volk STATIC IMPORTED)
-set_target_properties(volk PROPERTIES IMPORTED_LOCATION ${PROJECT_SOURCE_DIR}/deps/output/${ANDROID_ABI}/lib/libvolk.a)
+set(VOLK_SEARCH_PATH ${PROJECT_SOURCE_DIR}/deps/output/${ANDROID_ABI}/lib)
+find_library(VOLK_LIBRARY
+  NAMES volk volk_static
+  PATHS ${VOLK_SEARCH_PATH}
+  NO_DEFAULT_PATH
+)
+
+if(NOT VOLK_LIBRARY)
+  message(FATAL_ERROR "VOLK library not found in ${VOLK_SEARCH_PATH}. Expected one of: libvolk.a, libvolk.so, libvolk_static.a")
+endif()
+
+add_library(volk UNKNOWN IMPORTED)
+set_target_properties(volk PROPERTIES IMPORTED_LOCATION ${VOLK_LIBRARY})
 # include_directories(deps/volk/jni/)
 
 # LIBFFTW3
