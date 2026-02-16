@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+
+REQUIRED_VERSION="8.10.2"
+
+if ! command -v gradle >/dev/null 2>&1; then
+  echo "ERROR: gradle не найден в PATH." >&2
+  echo "Установите Gradle ${REQUIRED_VERSION} и повторите команду." >&2
+  exit 1
+fi
+
+CURRENT_VERSION=$(gradle --version | awk '/^Gradle / {print $2; exit}')
+if [ "$CURRENT_VERSION" != "$REQUIRED_VERSION" ]; then
+  echo "ERROR: требуется Gradle ${REQUIRED_VERSION}, найден ${CURRENT_VERSION}." >&2
+  exit 1
+fi
+
+exec gradle "$@"
