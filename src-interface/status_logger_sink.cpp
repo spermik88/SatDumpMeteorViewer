@@ -159,7 +159,7 @@ namespace satdump
             viewer_app->setPreviewEnabled(preview_enabled);
         ImGui::EndDisabled();
 
-        ImGui::SameLine(200 * ui_scale);
+        ImGui::SameLine();
         ImGui::TextUnformatted("Слои");
         for (size_t layer_index = 0; layer_index < ViewerApplication::kLayerCount; ++layer_index)
         {
