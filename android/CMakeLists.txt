@@ -41,11 +41,14 @@ endif()
 
 # LIBVOLK
 set(VOLK_SEARCH_PATH ${ANDROID_DEPS_LIB_DIR})
-find_library(VOLK_LIBRARY
-  NAMES volk volk_static
-  PATHS ${VOLK_SEARCH_PATH}
-  NO_DEFAULT_PATH
-)
+set(VOLK_LIBRARY "")
+if(EXISTS "${VOLK_SEARCH_PATH}/libvolk.a")
+  set(VOLK_LIBRARY "${VOLK_SEARCH_PATH}/libvolk.a")
+elseif(EXISTS "${VOLK_SEARCH_PATH}/libvolk.so")
+  set(VOLK_LIBRARY "${VOLK_SEARCH_PATH}/libvolk.so")
+elseif(EXISTS "${VOLK_SEARCH_PATH}/libvolk_static.a")
+  set(VOLK_LIBRARY "${VOLK_SEARCH_PATH}/libvolk_static.a")
+endif()
 
 if(NOT VOLK_LIBRARY)
   message(FATAL_ERROR

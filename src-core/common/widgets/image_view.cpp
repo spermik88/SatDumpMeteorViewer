@@ -117,7 +117,7 @@ void ImageViewWidget::updateCached(const image::Image *image, uint64_t revision,
                 img_chunks[i].img_height = height_end - height_start;
 
                 img_chunks[i].texture_buffer.resize(img_chunks[i].img_width * img_chunks[i].img_height);
-                auto crop = image->crop_to(width_start, height_start, width_end, height_end);
+                auto crop = const_cast<image::Image *>(image)->crop_to(width_start, height_start, width_end, height_end);
                 image::image_to_rgba(crop, img_chunks[i].texture_buffer.data());
 
                 img_chunks[i].offset_x = width_start;
