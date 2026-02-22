@@ -65,11 +65,11 @@ namespace satdump
 
     void RadiationViewerHandler::drawMenu()
     {
-        if (ImGui::CollapsingHeader("View"))
+        if (ImGui::CollapsingHeader("Вид"))
         {
-            if (ImGui::RadioButton(u8"\uf84c   Map", &selected_visualization_id, 0))
+            if (ImGui::RadioButton(u8"\uf84c   Карта", &selected_visualization_id, 0))
                 update();
-            if (ImGui::RadioButton(u8"\uf437   Graph", &selected_visualization_id, 1))
+            if (ImGui::RadioButton(u8"\uf437   График", &selected_visualization_id, 1))
                 update();
 
             if (selected_visualization_id == 0)
@@ -77,11 +77,11 @@ namespace satdump
                 if (ImGui::Combo("###mapchannelcomboid", &select_channel_image_id, select_channel_image_str.c_str()))
                     update();
                 ImGui::SetNextItemWidth(ImGui::GetWindowWidth() / 2);
-                if (ImGui::DragInt("##Min", &map_min, 1.0f, 0, 255, "Min: %d", ImGuiSliderFlags_AlwaysClamp))
+                if (ImGui::DragInt("##Min", &map_min, 1.0f, 0, 255, "Мин: %d", ImGuiSliderFlags_AlwaysClamp))
                     update();
                 ImGui::SameLine();
                 ImGui::SetNextItemWidth(ImGui::GetWindowWidth() / 2);
-                if (ImGui::DragInt("##Max", &map_max, 1.0f, 0, 255, "Max: %d", ImGuiSliderFlags_AlwaysClamp))
+                if (ImGui::DragInt("##Max", &map_max, 1.0f, 0, 255, "Макс: %d", ImGuiSliderFlags_AlwaysClamp))
                     update();
             }
 
@@ -89,14 +89,14 @@ namespace satdump
             if (save_disabled)
                 style::beginDisabled();
 
-            if (ImGui::Button("Save"))
+            if (ImGui::Button("Сохранить"))
             {
                 handler_thread_pool.push([this](int)
                                          {   async_image_mutex.lock();
                         is_updating = true;
                         logger->info("Saving Image...");
                         std::string default_path = config::main_cfg["satdump_directories"]["default_image_output_directory"]["value"].get<std::string>();
-                        std::string saved_at = save_image_dialog(products->instrument_name + "_map", default_path, "Save Map", &map_img, &viewer_app->save_type); 
+                        std::string saved_at = save_image_dialog(products->instrument_name + "_map", default_path, "Сохранить карту", &map_img, &viewer_app->save_type); 
 
                         if (saved_at == "")
                             logger->info("Save cancelled");
@@ -110,7 +110,7 @@ namespace satdump
 
             if (!canBeProjected())
                 style::beginDisabled();
-            if (ImGui::Button("Add to Projections"))
+            if (ImGui::Button("Добавить в проекции"))
                 addCurrentToProjections();
             ImGui::SameLine();
             proj_notif.draw();

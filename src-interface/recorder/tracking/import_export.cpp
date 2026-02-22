@@ -28,26 +28,26 @@ namespace satdump
     bool TrackingImportExport::draw_export()
     {
         bool ret = false;
-        if(ImGui::CollapsingHeader("Export to CLI", ImGuiTreeNodeFlags_DefaultOpen))
+        if(ImGui::CollapsingHeader("Экспорт в CLI", ImGuiTreeNodeFlags_DefaultOpen))
         {
             ImGuiStyle& imgui_style = ImGui::GetStyle();
             initial_frequency.draw();
-            if (ImGui::Combo("Source", &selected_sdr, sdr_sources_str.c_str()))
+            if (ImGui::Combo("Источник", &selected_sdr, sdr_sources_str.c_str()))
                 source_obj = dsp::dsp_sources_registry[sdr_sources[selected_sdr]]
                     .getInstance({sdr_sources[selected_sdr], "", "" });
-            ImGui::InputTextWithHint("Source ID", "[Auto]", &source_id);
+            ImGui::InputTextWithHint("ID источника", "[Авто]", &source_id);
             source_obj->drawControlUI();
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
-            ImGui::InputTextWithHint("HTTP Server", "[Disabled]", &http_server);
+            ImGui::InputTextWithHint("HTTP сервер", "[Отключен]", &http_server);
             ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - ImGui::CalcTextSize(u8"\ufc6e Open").x -
                 imgui_style.ItemSpacing.x - imgui_style.FramePadding.x * 2);
             output_directory.draw();
             ImGui::SameLine(0, imgui_style.ItemInnerSpacing.x);
-            ImGui::TextUnformatted("Output Directory");
-            ImGui::Checkbox("FFT Enable", &fft_enable);
-            if (ImGui::Button("Export Config"))
+            ImGui::TextUnformatted("Выходная папка");
+            ImGui::Checkbox("Включить FFT", &fft_enable);
+            if (ImGui::Button("Экспортировать конфиг"))
                 ret = true;
             export_message.draw();
         }
@@ -58,16 +58,16 @@ namespace satdump
     bool TrackingImportExport::draw_import()
     {
         bool ret = false;
-        if (ImGui::CollapsingHeader("Import from CLI"))
+        if (ImGui::CollapsingHeader("Импорт из CLI"))
         {
             import_file.draw();
-            ImGui::Checkbox("Import Scheduler Options", &import_autotrack_settings);
+            ImGui::Checkbox("Импорт расписания", &import_autotrack_settings);
             ImGui::SameLine();
-            ImGui::Checkbox("Import Rotator Settings", &import_rotator_settings);
+            ImGui::Checkbox("Импорт настроек ротатора", &import_rotator_settings);
             ImGui::SameLine();
-            ImGui::Checkbox("Import Tracked Objects", &import_tracked_objects);
+            ImGui::Checkbox("Импорт объектов трекинга", &import_tracked_objects);
             ImGui::Spacing();
-            if (ImGui::Button("Import"))
+            if (ImGui::Button("Импортировать"))
                 ret = true;
             import_message.draw();
         }
@@ -79,12 +79,12 @@ namespace satdump
         // Sanity Checks
         if (!output_directory.isValid())
         {
-            export_message.set_message(style::theme.red, "Please select a valid output directory first");
+            export_message.set_message(style::theme.red, "Сначала выберите корректную выходную папку");
             return;
         }
         if (source_obj->get_samplerate() == 0)
         {
-            export_message.set_message(style::theme.red, "Please set a valid samplerate first");
+            export_message.set_message(style::theme.red, "Сначала задайте корректную частоту дискретизации");
             return;
         }
 
@@ -130,7 +130,7 @@ namespace satdump
 
         // Export
         ui_thread_pool.push([this, exported_config](int) {
-            auto result = pfd::save_file("Export config as...", "", {"JSON files", "*.json"});
+            auto result = pfd::save_file("Экспортировать конфиг как...", "", {"JSON files", "*.json"});
             while (!result.ready(1000))
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
@@ -139,7 +139,7 @@ namespace satdump
                 std::ofstream test_output(result.result());
                 test_output << exported_config.dump(4);
                 test_output.close();
-                export_message.set_message(style::theme.green, "Successfully exported config");
+                export_message.set_message(style::theme.green, "Конфиг успешно экспортирован");
             }
         });
     }
@@ -149,12 +149,12 @@ namespace satdump
         // Sanity Checks
         if (!import_file.isValid())
         {
-            import_message.set_message(style::theme.red, "Select a valid import file first");
+            import_message.set_message(style::theme.red, "Сначала выберите корректный файл импорта");
             return;
         }
         if (!import_autotrack_settings && !import_tracked_objects && !import_rotator_settings)
         {
-            import_message.set_message(style::theme.red, "Select at least one setting to import");
+            import_message.set_message(style::theme.red, "Выберите хотя бы один пункт для импорта");
             return;
         }
 
@@ -181,11 +181,11 @@ namespace satdump
         }
         catch (std::exception &e)
         {
-            import_message.set_message(style::theme.red, "Error importing config!");
+            import_message.set_message(style::theme.red, "Ошибка импорта конфига!");
             logger->error("Tracking import error: %s", e.what());
             return;
         }
 
-        import_message.set_message(style::theme.green, "Successfully imported config");
+        import_message.set_message(style::theme.green, "Конфиг успешно импортирован");
     }
 }

@@ -103,10 +103,10 @@ namespace satdump
 
         ImGui::Spacing();
 
-        if (ImGui::CollapsingHeader("Object Information"))
+        if (ImGui::CollapsingHeader("Информация об объекте"))
             object_tracker.renderObjectStatus();
 
-        if (ImGui::CollapsingHeader("Rotator Configuration"))
+        if (ImGui::CollapsingHeader("Настройка ротатора"))
         {
             object_tracker.renderRotatorStatus();
             ImGui::SameLine();
@@ -114,7 +114,7 @@ namespace satdump
             if (rotator_handler->is_connected())
                 style::beginDisabled();
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-            if (ImGui::Combo("Type##rotatortype", &selected_rotator_handler, rotator_options_str.c_str()))
+            if (ImGui::Combo("Тип##rotatortype", &selected_rotator_handler, rotator_options_str.c_str()))
             {
                 rotator_handler = rotator_options[selected_rotator_handler].construct();
                 object_tracker.setRotator(rotator_handler);
@@ -138,16 +138,16 @@ namespace satdump
         ImGui::Spacing();
 
         float width_available = ImGui::GetContentRegionAvail().x;
-        std::string is_engaged = auto_scheduler.getEngaged() ? "YES" : "NO";
-        float centered_pos = width_available / 2.0f - ImGui::CalcTextSize(std::string("Autotrack Engaged: " + is_engaged).c_str()).x / 2.0f;
+        std::string is_engaged = auto_scheduler.getEngaged() ? "ДА" : "НЕТ";
+        float centered_pos = width_available / 2.0f - ImGui::CalcTextSize(std::string("Автотрекинг: " + is_engaged).c_str()).x / 2.0f;
         if (centered_pos > 0)
             ImGui::SetCursorPosX(centered_pos);
-        ImGui::TextUnformatted("Autotrack Engaged:");
+        ImGui::TextUnformatted("Автотрекинг:");
         ImGui::SameLine();
         ImGui::TextColored(auto_scheduler.getEngaged() ? style::theme.green : style::theme.red, "%s", is_engaged.c_str());
-        if (ImGui::Button("Schedule and Config", ImVec2(width_available, 0.0f)))
+        if (ImGui::Button("Расписание и конфиг", ImVec2(width_available, 0.0f)))
             config_window_was_asked = show_window_config = true;
-        if (ImGui::Button("Satellite finder", ImVec2(width_available, 0.0f)))
+        if (ImGui::Button("Поиск спутника", ImVec2(width_available, 0.0f)))
             show_satellite_finder_window = satellite_finder_was_asked = true;
         ImGui::Spacing();
         renderConfig();
@@ -159,24 +159,24 @@ namespace satdump
         if (show_window_config)
         {
             ImGui::SetNextWindowSizeConstraints(ImVec2(800 * ui_scale, 300 * ui_scale), ImVec2(INFINITY, INFINITY));
-            ImGui::Begin("Tracking Configuration", &show_window_config);
+            ImGui::Begin("Конфигурация трекинга", &show_window_config);
             ImGui::SetWindowSize(ImVec2(800 * ui_scale, 550 * ui_scale), ImGuiCond_FirstUseEver);
 
             if (ImGui::BeginTabBar("##trackingtabbar"))
             {
-                if (ImGui::BeginTabItem("Scheduling"))
+                if (ImGui::BeginTabItem("Расписание"))
                 {
                     ImGui::BeginChild("##trackingbarschedule", ImVec2(0, 0), false, ImGuiWindowFlags_NoResize);
                     auto_scheduler.renderAutotrackConfig(getTime());
                     ImGui::EndChild();
                     ImGui::EndTabItem();
                 }
-                if (ImGui::BeginTabItem("Rotator Config"))
+                if (ImGui::BeginTabItem("Ротатор"))
                 {
                     object_tracker.renderRotatorConfig();
                     ImGui::EndTabItem();
                 }
-                if (ImGui::BeginTabItem("Export/Import"))
+                if (ImGui::BeginTabItem("Экспорт/импорт"))
                 {
                     ImGui::BeginChild("##trackingimportexport", ImVec2(0, 0), false, ImGuiWindowFlags_NoResize);
                     if (config_import_export.draw_export())
@@ -206,7 +206,7 @@ namespace satdump
 
     void TrackingWidget::renderSatfinder() {
         if(show_satellite_finder_window) {
-            ImGui::Begin("Satellite finder", &show_satellite_finder_window);
+            ImGui::Begin("Поиск спутника", &show_satellite_finder_window);
             ImGui::SetWindowSize(ImVec2(800, 550), ImGuiCond_FirstUseEver);
             if (satellite_finder_was_asked)
                 ImGuiUtils_BringCurrentWindowToFront();

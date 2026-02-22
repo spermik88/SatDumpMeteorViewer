@@ -352,7 +352,7 @@ namespace satdump
 
     void ImageViewerHandler::drawMenu()
     {
-        if (ImGui::CollapsingHeader("Image"))
+        if (ImGui::CollapsingHeader("Изображение"))
         {
             if (products->images.size() < 100)
             {
@@ -387,27 +387,27 @@ namespace satdump
                 if (products->get_wavenumber(active_channel_id) != -1)
                 {
                     ImGui::BeginTooltip();
-                    ImGui::Text(u8"Wavenumber : %f cm\u207b\u00b9", products->get_wavenumber(active_channel_id));
+                    ImGui::Text(u8"Волновое число: %f cm\u207b\u00b9", products->get_wavenumber(active_channel_id));
                     double wl_nm = 1e7 / products->get_wavenumber(active_channel_id);
                     double frequency = 299792458.0 / (wl_nm * 10e-10);
 
                     if (wl_nm < 1e3)
-                        ImGui::Text("Wavelength : %f nm", wl_nm);
+                        ImGui::Text("Длина волны: %f nm", wl_nm);
                     else if (wl_nm < 1e6)
-                        ImGui::Text("Wavelength : %f µm", wl_nm / 1e3);
+                        ImGui::Text("Длина волны: %f µm", wl_nm / 1e3);
                     else if (wl_nm < 1e9)
-                        ImGui::Text("Wavelength : %f mm", wl_nm / 1e6);
+                        ImGui::Text("Длина волны: %f mm", wl_nm / 1e6);
                     else
-                        ImGui::Text("Wavelength : %f cm", wl_nm / 1e7);
+                        ImGui::Text("Длина волны: %f cm", wl_nm / 1e7);
 
                     if (frequency < 1e3)
-                        ImGui::Text("Frequency : %f Hz", frequency);
+                        ImGui::Text("Частота: %f Hz", frequency);
                     else if (frequency < 1e6)
-                        ImGui::Text("Frequency : %f kHz", frequency / 1e3);
+                        ImGui::Text("Частота: %f kHz", frequency / 1e3);
                     else if (frequency < 1e9)
-                        ImGui::Text("Frequency : %f MHz", frequency / 1e6);
+                        ImGui::Text("Частота: %f MHz", frequency / 1e6);
                     else
-                        ImGui::Text("Frequency : %f GHz", frequency / 1e9);
+                        ImGui::Text("Частота: %f GHz", frequency / 1e9);
                     ImGui::EndTooltip();
                 }
             }
@@ -428,7 +428,7 @@ namespace satdump
                 if (ImGui::Button(u8"\uf07e"))
                     range_window = !range_window;
                 if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Diaplay Range Control");
+                    ImGui::SetTooltip("Управление диапазоном");
                 ImGui::PopStyleColor(to_pop);
                 to_pop = 0;
 
@@ -452,11 +452,11 @@ namespace satdump
                     ImGui::EndDisabled();
 
                 if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("Show Scale");
+                    ImGui::SetTooltip("Показать шкалу");
 
                 if (range_window && active_channel_calibrated)
                 {
-                    ImGui::Begin("Display Range Control", &range_window, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
+                    ImGui::Begin("Управление диапазоном", &range_window, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
                     ImGui::SetWindowSize(ImVec2(200 * ui_scale, 115 * ui_scale));
                     bool buff = false;
                     std::pair<double, double> &this_range = products->get_calibration_type(active_channel_id) && is_temp ? temp_ranges[active_channel_id] : radiance_ranges[active_channel_id];
@@ -472,9 +472,9 @@ namespace satdump
                         format_string = "%.2f%% Albedo";
 
                     ImGui::SetNextItemWidth(120 * ui_scale);
-                    buff |= ImGui::InputDouble("Minimum", &tmp_min, 0, 0, format_string.c_str(), ImGuiInputTextFlags_EnterReturnsTrue);
+                    buff |= ImGui::InputDouble("Минимум", &tmp_min, 0, 0, format_string.c_str(), ImGuiInputTextFlags_EnterReturnsTrue);
                     ImGui::SetNextItemWidth(120 * ui_scale);
-                    buff |= ImGui::InputDouble("Maximum", &tmp_max, 0, 0, format_string.c_str(), ImGuiInputTextFlags_EnterReturnsTrue);
+                    buff |= ImGui::InputDouble("Максимум", &tmp_max, 0, 0, format_string.c_str(), ImGuiInputTextFlags_EnterReturnsTrue);
                     if (buff)
                     {
                         this_range.first = (tmp_min / (products->get_calibration_type(active_channel_id) ? 1 : 100));
@@ -482,7 +482,7 @@ namespace satdump
                         update_needed = true;
                         asyncUpdate();
                     }
-                    if (ImGui::Button("Default"))
+                    if (ImGui::Button("По умолчанию"))
                     {
                         this_range = is_temp && products->get_calibration_type(active_channel_id) ? std::pair<double, double>{radiance_to_temperature(products->get_calibration_default_radiance_range(active_channel_id).first, products->get_wavenumber(active_channel_id)),
                                                                                                                               radiance_to_temperature(products->get_calibration_default_radiance_range(active_channel_id).second, products->get_wavenumber(active_channel_id))}
@@ -504,7 +504,7 @@ namespace satdump
                     }
 
                     int w = ImGui::GetWindowSize()[0];
-                    if (ImGui::Begin("Scale##scale_window", &show_scale, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize))
+                    if (ImGui::Begin("Шкала##scale_window", &show_scale, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize))
                     {
                         ImGui::SetWindowSize(ImVec2(100 * ui_scale, 520 * ui_scale));
                         ImGui::SetWindowPos(ImVec2(w + 20 * ui_scale, 50 * ui_scale), ImGuiCond_Once);
@@ -547,7 +547,7 @@ namespace satdump
                 ImGui::BeginGroup();
                 if (products->get_calibration_type(active_channel_id))
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 3 * ui_scale);
-                ImGui::Text("Raw Counts");
+                ImGui::Text("Сырые отсчеты");
                 ImGui::SameLine();
 
                 ImGui::SetNextItemWidth(50);
@@ -560,9 +560,9 @@ namespace satdump
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 3 * ui_scale);
                     ImGui::SetNextItemWidth(90 * ui_scale);
                     // ImGui::Combo("##temp_rad", &tst, "Radiance\0Temperature");
-                    if (ImGui::BeginCombo("##temp_rad", is_temp ? "Temperature" : "Radiance", ImGuiComboFlags_NoArrowButton))
+                    if (ImGui::BeginCombo("##temp_rad", is_temp ? "Температура" : "Радианс", ImGuiComboFlags_NoArrowButton))
                     {
-                        if (ImGui::Selectable("Radiance", !is_temp))
+                        if (ImGui::Selectable("Радианс", !is_temp))
                         {
                             is_temp = false;
                             asyncUpdate();
@@ -570,7 +570,7 @@ namespace satdump
                         if (!is_temp)
                             ImGui::SetItemDefaultFocus();
 
-                        if (ImGui::Selectable("Temperature", is_temp))
+                        if (ImGui::Selectable("Температура", is_temp))
                         {
                             is_temp = true;
                             asyncUpdate();
@@ -581,7 +581,7 @@ namespace satdump
                     }
                 }
                 else
-                    ImGui::Text("Albedo");
+                    ImGui::Text("Альбедо");
                 ImGui::EndGroup();
 
                 ImGui::Spacing();
@@ -589,34 +589,34 @@ namespace satdump
                 ImGui::Spacing();
             }
 
-            if (ImGui::Checkbox("Median Blur", &median_blur))
+            if (ImGui::Checkbox("Медианное размытие", &median_blur))
                 asyncUpdate();
 
-            if (ImGui::Checkbox("Despeckle", &despeckle))
+            if (ImGui::Checkbox("Убрать шум", &despeckle))
                 asyncUpdate();
 
-            if (ImGui::Checkbox("Rotate", &rotate_image))
+            if (ImGui::Checkbox("Поворот", &rotate_image))
                 asyncUpdate();
 
-            if (products->can_geometrically_correct() && ImGui::Checkbox("Correct", &correct_image))
+            if (products->can_geometrically_correct() && ImGui::Checkbox("Коррекция", &correct_image))
                 asyncUpdate();
 
-            if (products->can_remove_background() && ImGui::Checkbox("Remove Background", &remove_background))
+            if (products->can_remove_background() && ImGui::Checkbox("Удалить фон", &remove_background))
                 asyncUpdate();
 
-            if (ImGui::Checkbox("Equalize", &equalize_image))
+            if (ImGui::Checkbox("Выравнивание", &equalize_image))
                 asyncUpdate();
 
-            if (ImGui::Checkbox("Individual Equalize", &individual_equalize_image))
+            if (ImGui::Checkbox("Индивидуальное выравнивание", &individual_equalize_image))
                 asyncUpdate();
 
-            if (ImGui::Checkbox("White Balance", &white_balance_image))
+            if (ImGui::Checkbox("Баланс белого", &white_balance_image))
                 asyncUpdate();
 
-            if (ImGui::Checkbox("Normalize", &normalize_image))
+            if (ImGui::Checkbox("Нормализация", &normalize_image))
                 asyncUpdate();
 
-            if (ImGui::Checkbox("Invert", &invert_image))
+            if (ImGui::Checkbox("Инверсия", &invert_image))
             {
                 updateScaleImage();
                 asyncUpdate();
@@ -628,20 +628,20 @@ namespace satdump
                 updateScaleImage();
             }
 
-            if (ImGui::Checkbox("Manual Brightness/Contrast", &manual_brightness_contrast))
+            if (ImGui::Checkbox("Ручная яркость/контраст", &manual_brightness_contrast))
                 asyncUpdate();
             if (manual_brightness_contrast)
             {
-                if (ImGui::SliderFloat("Brightness", &manual_brightness_contrast_brightness, -2, 2))
+                if (ImGui::SliderFloat("Яркость", &manual_brightness_contrast_brightness, -2, 2))
                     asyncUpdate();
-                if (ImGui::SliderFloat("Contrast", &manual_brightness_contrast_contrast, -2, 2))
+                if (ImGui::SliderFloat("Контраст", &manual_brightness_contrast_contrast, -2, 2))
                     asyncUpdate();
             }
 
             bool save_disabled = is_updating || rgb_processing;
             if (save_disabled)
                 style::beginDisabled();
-            if (ImGui::Button("Save"))
+            if (ImGui::Button("Сохранить"))
             {
                 handler_thread_pool.clear_queue();
                 handler_thread_pool.push([this](int)
@@ -720,7 +720,7 @@ namespace satdump
                          file_name = std::regex_replace(file_name, std::regex(u8"\u03BB="), u8"");
 
                          // Launch save as dialog
-                         std::string saved_at = save_image_dialog(file_name, default_path, "Save Image", &current_image, &viewer_app->save_type);
+                         std::string saved_at = save_image_dialog(file_name, default_path, "Сохранить изображение", &current_image, &viewer_app->save_type);
 
                          if (saved_at == "")
                              logger->info("Save cancelled");
@@ -732,12 +732,12 @@ namespace satdump
             if (save_disabled)
             {
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                    ImGui::SetTooltip("Updating, please wait...");
+                    ImGui::SetTooltip("Обновление, пожалуйста подождите...");
                 style::endDisabled();
             }
         }
 
-        if (ImGui::CollapsingHeader("RGB Composites"))
+        if (ImGui::CollapsingHeader("RGB-композиты"))
         {
             bool show_info_button = select_rgb_presets != -1 && rgb_compo_cfg.description_markdown != "";
             if (ImGui::BeginCombo(show_info_button ? "##presetcombo" : "Preset##presetcombo",
@@ -765,7 +765,7 @@ namespace satdump
             {
                 ImGui::SameLine();
 
-                if (ImGui::Button(u8"\uf449 Info###compopresetinfo"))
+                if (ImGui::Button(u8"\uf449 Инфо###compopresetinfo"))
                 {
                     std::ifstream ifs(resources::getResourcePath(rgb_compo_cfg.description_markdown));
                     std::string desc_markdown((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
@@ -783,7 +783,7 @@ namespace satdump
             }
             if (rgb_processing)
                 style::beginDisabled();
-            if (ImGui::Button("Apply") && !rgb_processing)
+            if (ImGui::Button("Применить") && !rgb_processing)
             {
                 updateRGB();
                 return; // Avoid causing ImGui issues!
@@ -795,11 +795,11 @@ namespace satdump
         }
 
 #if 0
-        if (ImGui::CollapsingHeader("Products"))
+        if (ImGui::CollapsingHeader("Продукты"))
         {
             if (products->has_calibation())
             {
-                if (ImGui::Button("Temperature"))
+                if (ImGui::Button("Температура"))
                 {
                     active_channel_id = select_image_id - 1;
 
@@ -836,21 +836,21 @@ namespace satdump
 
         if (products->has_proj_cfg())
         {
-            if (ImGui::CollapsingHeader("Map Overlay"))
+            if (ImGui::CollapsingHeader("Оверлей карты"))
             {
                 if (overlay_handler.drawUI())
                     asyncUpdate();
             }
 
-            if (ImGui::CollapsingHeader("Projection"))
+            if (ImGui::CollapsingHeader("Проекция"))
             {
                 ImGui::BeginGroup();
                 if (!canBeProjected())
                     style::beginDisabled();
-                if (ImGui::Button("Add to Projections"))
+                if (ImGui::Button("Добавить в проекции"))
                     addCurrentToProjections();
                 proj_notif.draw();
-                ImGui::Checkbox("Old Algorithm", &projection_use_old_algo);
+                ImGui::Checkbox("Старый алгоритм", &projection_use_old_algo);
                 if (!canBeProjected())
                     style::endDisabled();
 
@@ -883,7 +883,7 @@ namespace satdump
             ImGuiIO &io = ImGui::GetIO();
             ImGui::SetNextWindowSize({400 * ui_scale, 400 * ui_scale}, ImGuiCond_Appearing);
             ImGui::SetNextWindowPos(ImVec2((io.DisplaySize.x / 2) - (400 * ui_scale / 2), (io.DisplaySize.y / 2) - (400 * ui_scale / 2)), ImGuiCond_Appearing);
-            ImGui::Begin("Composite Info", &show_markdown_description, ImGuiWindowFlags_NoSavedSettings);
+            ImGui::Begin("Информация о композите", &show_markdown_description, ImGuiWindowFlags_NoSavedSettings);
             markdown_composite_info.render();
             ImGui::End();
         }

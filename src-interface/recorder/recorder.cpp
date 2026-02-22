@@ -277,7 +277,7 @@ namespace satdump
             ImGui::BeginChild("RecorderChildPanel", {left_width, wf_size}, false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
             {
                 bool assume_started = is_started;
-                if (ImGui::CollapsingHeader("Device", tracking_started_cli ? ImGuiTreeNodeFlags_None : ImGuiTreeNodeFlags_DefaultOpen))
+                if (ImGui::CollapsingHeader("Устройство", tracking_started_cli ? ImGuiTreeNodeFlags_None : ImGuiTreeNodeFlags_DefaultOpen))
                 {
                     ImGui::Spacing();
                     if (assume_started)
@@ -381,12 +381,12 @@ namespace satdump
 
                     if (!assume_started)
                     {
-                        if (ImGui::Button("Start"))
+                        if (ImGui::Button("Старт"))
                             start();
                     }
                     else
                     {
-                        if (ImGui::Button("Stop"))
+                        if (ImGui::Button("Стоп"))
                             stop();
                     }
 
@@ -395,7 +395,7 @@ namespace satdump
 
                 if (ImGui::CollapsingHeader("FFT", tracking_started_cli ? ImGuiTreeNodeFlags_None : ImGuiTreeNodeFlags_DefaultOpen))
                 {
-                    if (ImGui::Combo("FFT Size", &selected_fft_size, "131072\0"
+                    if (ImGui::Combo("Размер FFT", &selected_fft_size, "131072\0"
                                                                      "65536\0"
                                                                      "32768\0"
                                                                      "16384\0"
@@ -413,7 +413,7 @@ namespace satdump
                         logger->info("Set FFT size to %d", fft_size);
                     }
                     int old_rate = fft_rate;
-                    if (ImGui::InputInt("FFT Rate", &fft_rate))
+                    if (ImGui::InputInt("Частота FFT", &fft_rate))
                     {
                         if (fft_rate <= 0)
                             fft_rate = old_rate;
@@ -432,7 +432,7 @@ namespace satdump
                         logger->info("Set Waterfall rate to %d", waterfall_rate);
                     }
                     old_rate = waterfall_rate;
-                    if (ImGui::InputInt("Waterfall Rate", &waterfall_rate))
+                    if (ImGui::InputInt("Частота водопада", &waterfall_rate))
                     {
                         if (waterfall_rate <= 0)
                             waterfall_rate = old_rate;
@@ -452,10 +452,10 @@ namespace satdump
                     widgets::SteppedSliderFloat("FFT Max", &fft_plot->scale_max, -160, 150);
                     widgets::SteppedSliderFloat("FFT Min", &fft_plot->scale_min, -160, 150);
                     widgets::SteppedSliderFloat("Avg Num", &fft->avg_num, 1, 500, 1);
-                    if (ImGui::Combo("Palette", &selected_waterfall_palette, waterfall_palettes_str.c_str()))
+                    if (ImGui::Combo("Палитра", &selected_waterfall_palette, waterfall_palettes_str.c_str()))
                         waterfall_plot->set_palette(waterfall_palettes[selected_waterfall_palette]);
-                    ImGui::Checkbox("Show Waterfall", &show_waterfall);
-                    ImGui::Checkbox("Frequency Scale", &fft_plot->enable_freq_scale);
+                    ImGui::Checkbox("Показать водопад", &show_waterfall);
+                    ImGui::Checkbox("Шкала частоты", &fft_plot->enable_freq_scale);
                 }
 
                 if (fft_plot->scale_max < fft_plot->scale_min)
@@ -474,7 +474,7 @@ namespace satdump
                     waterfall_plot->scale_max = fft_plot->scale_max;
                 }
 
-                if (ImGui::CollapsingHeader("Processing"))
+                if (ImGui::CollapsingHeader("Обработка"))
                 {
                     // Settings & Selection menu
                     bool assume_processing = is_processing;
@@ -490,7 +490,7 @@ namespace satdump
                     // Preset Menu
                     if (pipeline_selector.selected_pipeline.preset.frequencies.size() > 0)
                     {
-                        if (ImGui::BeginCombo("Freq###presetscombo", pipeline_selector.selected_pipeline.preset.frequencies[pipeline_preset_id].second == frequency_hz ? pipeline_selector.selected_pipeline.preset.frequencies[pipeline_preset_id].first.c_str() : ""))
+                        if (ImGui::BeginCombo("Частота###presetscombo", pipeline_selector.selected_pipeline.preset.frequencies[pipeline_preset_id].second == frequency_hz ? pipeline_selector.selected_pipeline.preset.frequencies[pipeline_preset_id].first.c_str() : ""))
                         {
                             for (int n = 0; n < (int)pipeline_selector.selected_pipeline.preset.frequencies.size(); n++)
                             {
@@ -519,18 +519,18 @@ namespace satdump
                     bool assume_stopping_processing = is_stopping_processing;
                     if (!assume_processing)
                     {
-                        if (ImGui::Button("Start###startprocessing"))
+                        if (ImGui::Button("Старт###startprocessing"))
                             start_processing();
                     }
                     else if (assume_stopping_processing)
                     {
                         style::beginDisabled();
-                        ImGui::Button("Stopping...##stoppingprocessing");
+                        ImGui::Button("Остановка...##stoppingprocessing");
                         style::endDisabled();
                     }
                     else
                     {
-                        if (ImGui::Button("Stop##stopprocessing"))
+                        if (ImGui::Button("Стоп##stopprocessing"))
                             ui_thread_pool.push([=](int)
                                                 { stop_processing(); });
                     }
@@ -541,7 +541,7 @@ namespace satdump
                         style::endDisabled();
                 }
 
-                if (ImGui::CollapsingHeader("Recording"))
+                if (ImGui::CollapsingHeader("Запись"))
                 {
                     bool assume_recording = is_recording;
                     if (assume_recording)
@@ -559,11 +559,11 @@ namespace satdump
                         estimated_available = disk_available - file_written;
 
                     if (file_written < 1e9)
-                        ImGui::Text("Size : %.2f MB", file_written / 1e6);
+                        ImGui::Text("Размер: %.2f MB", file_written / 1e6);
                     else
-                        ImGui::Text("Size : %.2f GB", file_written / 1e9);
+                        ImGui::Text("Размер: %.2f GB", file_written / 1e9);
 
-                    ImGui::Text("Free Space: %.2f GB", estimated_available / pow(1024, 3));
+                    ImGui::Text("Свободно: %.2f GB", estimated_available / pow(1024, 3));
 
                     int timeleft;
                     switch (baseband_format)
@@ -606,7 +606,7 @@ namespace satdump
 
                             timeleft %= 60;
                             int seconds = timeleft;
-                            ImGui::Text("Time left: %02d:%02d:%02d:%02d", day, hour, minutes, seconds);
+                            ImGui::Text("Осталось: %02d:%02d:%02d:%02d", day, hour, minutes, seconds);
                         }
                     }
 
@@ -614,49 +614,49 @@ namespace satdump
                     if (baseband_format == dsp::ZIQ)
                     {
                         if (file_sink->get_written_raw() < 1e9)
-                            ImGui::Text("Size (raw) : %.2f MB", file_sink->get_written_raw() / 1e6);
+                            ImGui::Text("Размер (raw): %.2f MB", file_sink->get_written_raw() / 1e6);
                         else
-                            ImGui::Text("Size (raw) : %.2f GB", file_sink->get_written_raw() / 1e9);
+                            ImGui::Text("Размер (raw): %.2f GB", file_sink->get_written_raw() / 1e9);
                     }
 #endif
 
-                    ImGui::Text("File : %s", recorder_filename.c_str());
+                    ImGui::Text("Файл: %s", recorder_filename.c_str());
 
                     ImGui::Spacing();
 
                     if (!assume_recording)
-                        ImGui::TextColored(style::theme.red, "IDLE");
+                        ImGui::TextColored(style::theme.red, "ПРОСТОЙ");
                     else
-                        ImGui::TextColored(style::theme.green, "RECORDING");
+                        ImGui::TextColored(style::theme.green, "ЗАПИСЬ");
 
                     ImGui::Spacing();
 
                     if (!assume_recording)
                     {
-                        if (ImGui::Button("Start###startrecording"))
+                        if (ImGui::Button("Старт###startrecording"))
                             start_recording();
                     }
                     else
                     {
-                        if (ImGui::Button("Stop##stoprecording"))
+                        if (ImGui::Button("Стоп##stoprecording"))
                             stop_recording();
                     }
                 }
 
-                show_tracking = ImGui::CollapsingHeader("Tracking", tracking_started_cli ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None);
+                show_tracking = ImGui::CollapsingHeader("Трекинг", tracking_started_cli ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None);
                 if (show_tracking)
                 {
                     try_init_tracking_widget();
                     tracking_widget->render();
                 }
 
-                if (ImGui::CollapsingHeader("VFOs"))
+                if (ImGui::CollapsingHeader("VFO"))
                 {
                     vfos_mtx.lock();
                     std::string to_delete = "";
                     if (vfo_list.size() == 0)
                     {
-                        const char *no_vfo_text = "No Active VFOs";
+                        const char *no_vfo_text = "Нет активных VFO";
                         ImGui::SetCursorPosX(ImGui::GetContentRegionAvail().x / 2 - ImGui::CalcTextSize(no_vfo_text).x / 2);
                         ImGui::TextDisabled("%s", no_vfo_text);
                     }
@@ -667,21 +667,21 @@ namespace satdump
                             ImGui::PushStyleColor(ImGuiCol_Text, style::theme.green.Value);
                             ImGui::SeparatorText(vfo.name.c_str());
                             ImGui::PopStyleColor();
-                            ImGui::BulletText("Frequency: %s", format_notated(vfo.freq, "Hz").c_str());
+                            ImGui::BulletText("Частота: %s", format_notated(vfo.freq, "Hz").c_str());
                             if (vfo.selected_pipeline.name != "")
                             {
-                                ImGui::BulletText("Pipeline: %s", vfo.selected_pipeline.readable_name.c_str());
-                                ImGui::BulletText("Directory: %s", vfo.output_dir.c_str());
+                                ImGui::BulletText("Пайплайн: %s", vfo.selected_pipeline.readable_name.c_str());
+                                ImGui::BulletText("Папка: %s", vfo.output_dir.c_str());
                             }
                             else if (vfo.file_sink)
                             {
                                 if (vfo.file_sink->get_written() < 1e9)
-                                    ImGui::BulletText("IQ Size: %.2f MB", vfo.file_sink->get_written() / 1e6);
+                                    ImGui::BulletText("Размер IQ: %.2f MB", vfo.file_sink->get_written() / 1e6);
                                 else
-                                    ImGui::BulletText("IQ Size: %.2f GB", vfo.file_sink->get_written() / 1e9);
+                                    ImGui::BulletText("Размер IQ: %.2f GB", vfo.file_sink->get_written() / 1e9);
                             }
                             ImGui::Spacing();
-                            if (ImGui::Button(std::string("Stop##" + vfo.id).c_str(), ImVec2(ImGui::GetContentRegionAvail().x, 0)))
+                            if (ImGui::Button(std::string("Стоп##" + vfo.id).c_str(), ImVec2(ImGui::GetContentRegionAvail().x, 0)))
                                 to_delete = vfo.id;
                         }
                     }
@@ -689,7 +689,7 @@ namespace satdump
                     if (to_delete != "")
                         del_vfo(to_delete);
 #if 0
-                    if (ImGui::Button("Add Test"))
+                    if (ImGui::Button("Добавить тест"))
                     {
                         int idp = 0;
                         for (int n = 0; n < (int)pipelines.size(); n++)
@@ -701,14 +701,14 @@ namespace satdump
                         add_vfo("meteor_test", "Meteor Test", 137.9e6, idp, {});
                     }
 
-                    if (ImGui::Button("Del Test"))
+                    if (ImGui::Button("Удалить тест"))
                     {
                         del_vfo("meteor_test");
                     }
 #endif
                 }
 
-                if (ImGui::CollapsingHeader("Debug"))
+                if (ImGui::CollapsingHeader("Отладка"))
                 {
                     if (constellation_debug == nullptr)
                         constellation_debug = new widgets::ConstellationViewer();
@@ -771,7 +771,7 @@ namespace satdump
             {
                 if (is_processing)
                 {
-                    if (ImGui::BeginTabItem("Live Processing"))
+                    if (ImGui::BeginTabItem("Live-обработка"))
                     {
                         float y_pos = ImGui::GetCursorPosY() + 35 * ui_scale;
                         float live_width = recorder_size.x + 16 * ui_scale;

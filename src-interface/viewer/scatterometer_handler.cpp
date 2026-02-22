@@ -108,11 +108,11 @@ namespace satdump
 
     void ScatterometerViewerHandler::drawMenu()
     {
-        if (ImGui::CollapsingHeader("Images"))
+        if (ImGui::CollapsingHeader("Изображения"))
         {
-            if (ImGui::RadioButton(u8"Raw Image", &selected_visualization_id, 0))
+            if (ImGui::RadioButton(u8"Сырое изображение", &selected_visualization_id, 0))
                 asyncUpdate();
-            if (ImGui::RadioButton(u8"Projected", &selected_visualization_id, 1))
+            if (ImGui::RadioButton(u8"Проекция", &selected_visualization_id, 1))
                 asyncUpdate();
 
             if (selected_visualization_id == 0 || selected_visualization_id == 1)
@@ -129,18 +129,18 @@ namespace satdump
                 }
 
                 ImGui::SetNextItemWidth(ImGui::GetWindowWidth() / 2);
-                if (ImGui::SliderInt("##MinScat", &scat_grayscale_min, 0, 1e7, "Min: %d", ImGuiSliderFlags_AlwaysClamp))
+                if (ImGui::SliderInt("##MinScat", &scat_grayscale_min, 0, 1e7, "Мин: %d", ImGuiSliderFlags_AlwaysClamp))
                     asyncUpdate();
                 ImGui::SameLine();
                 ImGui::SetNextItemWidth(ImGui::GetWindowWidth() / 2);
-                if (ImGui::SliderInt("##MaxScat", &scat_grayscale_max, 0, 1e7, "Max: %d", ImGuiSliderFlags_AlwaysClamp))
+                if (ImGui::SliderInt("##MaxScat", &scat_grayscale_max, 0, 1e7, "Макс: %d", ImGuiSliderFlags_AlwaysClamp))
                     asyncUpdate();
             }
 
             bool save_disabled = is_updating;
             if (save_disabled)
                 style::beginDisabled();
-            if (ImGui::Button("Save"))
+            if (ImGui::Button("Сохранить"))
             {
                 handler_thread_pool.push([this](int)
                                          {   async_image_mutex.lock();
@@ -149,7 +149,7 @@ namespace satdump
                         std::string default_path = config::main_cfg["satdump_directories"]["default_image_output_directory"]["value"].get<std::string>();
                         std::string saved_at = save_image_dialog(products->instrument_name + "_" +
                             ((selected_visualization_id == 1 && current_scat_type == SCAT_ASCAT) ? std::to_string(ascat_select_channel_id) : 
-                            std::to_string(select_channel_image_id)), default_path, "Save Image", &current_img, &viewer_app->save_type);
+                            std::to_string(select_channel_image_id)), default_path, "Сохранить изображение", &current_img, &viewer_app->save_type);
 
                         if (saved_at == "")
                             logger->info("Save cancelled");
@@ -161,12 +161,12 @@ namespace satdump
             if (save_disabled)
             {
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                    ImGui::SetTooltip("Updating, please wait...");
+                    ImGui::SetTooltip("Обновление, пожалуйста подождите...");
                 style::endDisabled();
             }
         }
 
-        if (ImGui::CollapsingHeader("Map Overlay"))
+        if (ImGui::CollapsingHeader("Оверлей карты"))
         {
             if (selected_visualization_id != 1)
                 style::beginDisabled();
@@ -178,12 +178,12 @@ namespace satdump
                 style::endDisabled();
         }
 
-        if (ImGui::CollapsingHeader("Projection"))
+        if (ImGui::CollapsingHeader("Проекция"))
         {
             ImGui::BeginGroup();
             if (!canBeProjected())
                 style::beginDisabled();
-            if (ImGui::Button("Add to Projections"))
+            if (ImGui::Button("Добавить в проекции"))
                 addCurrentToProjections();
             ImGui::SameLine();
             proj_notif.draw();
@@ -193,7 +193,7 @@ namespace satdump
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && selected_visualization_id != 1)
             {
                 ImGui::BeginTooltip();
-                ImGui::TextColored(style::theme.red, "Select projection view first!");
+                ImGui::TextColored(style::theme.red, "Сначала выберите проекцию!");
                 ImGui::EndTooltip();
             }
         }
