@@ -2,6 +2,7 @@ package com.altillimity.satdump
 
 import android.app.NativeActivity
 import android.os.Bundle
+import android.os.Build
 import android.content.Context
 import android.view.inputmethod.InputMethodManager
 import android.view.KeyEvent
@@ -49,6 +50,7 @@ class MainActivity : NativeActivity(), TextWatcher {
 
     // // Adapted from Ryzerth's implementation, a lot cleaner than my old Java crap!
     private var ACTION_USB_PERMISSION = "libusb.android.USB_PERMISSION";
+    private var isUsbReceiverRegistered = false
 
     private var usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -78,7 +80,12 @@ class MainActivity : NativeActivity(), TextWatcher {
         //        usbManager = getSystemService(Context.USB_SERVICE) as UsbManager;
         //        val permissionIntent = PendingIntent.getBroadcast(this, 0, Intent(ACTION_USB_PERMISSION), 0)
         val filter = IntentFilter(ACTION_USB_PERMISSION)
-        registerReceiver(usbReceiver, filter)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(usbReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(usbReceiver, filter)
+        }
+        isUsbReceiverRegistered = true
 
         // Get permission for all USB devices
         // val devList = usbManager!!.getDeviceList();
@@ -105,6 +112,14 @@ class MainActivity : NativeActivity(), TextWatcher {
         editText!!.addTextChangedListener(this);
 
         setContentView(mLayout);
+    }
+
+    override fun onDestroy() {
+        if (isUsbReceiverRegistered) {
+            unregisterReceiver(usbReceiver)
+            isUsbReceiverRegistered = false
+        }
+        super.onDestroy()
     }
 
 
