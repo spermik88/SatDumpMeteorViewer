@@ -21,6 +21,7 @@
 #include <ctime>
 #include <filesystem>
 #include <iomanip>
+#include <mutex>
 #include <optional>
 #include <sstream>
 
@@ -40,6 +41,13 @@ namespace satdump
 {
     namespace
     {
+        constexpr bool kApplianceMode =
+#ifdef __ANDROID__
+            true;
+#else
+            false;
+#endif
+
         struct ArchiveEntry
         {
             std::string run_id;
@@ -55,6 +63,7 @@ namespace satdump
 
         std::vector<ArchiveEntry> archive_entries;
         bool archive_index_ready = false;
+        std::mutex archive_index_mutex;
 
         std::filesystem::path archive_base_path()
         {
@@ -129,6 +138,7 @@ namespace satdump
 
         void load_archive_index()
         {
+            std::lock_guard<std::mutex> lock(archive_index_mutex);
             archive_entries.clear();
             archive_index_ready = true;
             std::filesystem::path base_path = archive_base_path();
@@ -217,6 +227,14 @@ namespace satdump
                       });
         }
 
+        const ArchiveEntry *find_archive_entry(const std::string &run_id)
+        {
+            for (const auto &entry : archive_entries)
+                if (entry.run_id == run_id)
+                    return &entry;
+            return nullptr;
+        }
+
         bool ensure_thumbnail_texture(ArchiveEntry &entry)
         {
             if (entry.texture_id != 0)
@@ -256,6 +274,48 @@ namespace satdump
     std::shared_ptr<NotifyLoggerSink> notify_logger_sink;
     std::shared_ptr<StatusLoggerSink> status_logger_sink;
 
+    bool is_appliance_mode()
+    {
+        return kApplianceMode;
+    }
+
+    void invalidate_archive_index()
+    {
+        std::lock_guard<std::mutex> lock(archive_index_mutex);
+        archive_index_ready = false;
+    }
+
+    std::vector<std::string> get_archive_run_ids()
+    {
+        if (!archive_index_ready)
+            load_archive_index();
+
+        std::vector<std::string> out;
+        out.reserve(archive_entries.size());
+        for (const auto &entry : archive_entries)
+            out.push_back(entry.run_id);
+        return out;
+    }
+
+    bool open_run_in_viewer(const std::string &run_id)
+    {
+        if (run_id.empty())
+            return false;
+
+        if (!archive_index_ready)
+            load_archive_index();
+
+        const ArchiveEntry *entry = find_archive_entry(run_id);
+        if (!entry)
+            return false;
+
+        selected_run_id = run_id;
+        if (std::filesystem::exists(entry->dataset_path))
+            viewer_app->loadDatasetInViewer(entry->dataset_path);
+        current_screen = Screen::Viewer;
+        return true;
+    }
+
     void initMainUI()
     {
         ImPlot::CreateContext();
@@ -284,6 +344,38 @@ namespace satdump
         notify_logger_sink = std::make_shared<NotifyLoggerSink>();
         logger->add_sink(notify_logger_sink);
 
+        eventBus->register_handler<ops::FirstValidFrameEvent>([](const ops::FirstValidFrameEvent &evt)
+                                                              {
+                                                                  selected_run_id = ops::normalize_run_id(evt.run_id);
+                                                                  current_screen = Screen::Viewer;
+
+                                                                  ops::OpsStateSnapshot state = ops::get_state();
+                                                                  std::filesystem::path dataset_path = std::filesystem::path(state.current_run_tmp_dir) / "dataset.json";
+                                                                  if (!std::filesystem::exists(dataset_path))
+                                                                      dataset_path = std::filesystem::path(state.current_run_final_dir) / "dataset.json";
+                                                                  if (std::filesystem::exists(dataset_path))
+                                                                  {
+                                                                      ui_thread_pool.push([dataset_path](int)
+                                                                                          { viewer_app->loadDatasetInViewer(dataset_path.string()); });
+                                                                  }
+                                                              });
+        eventBus->register_handler<ops::RunFinalizedEvent>([](const ops::RunFinalizedEvent &)
+                                                           { invalidate_archive_index(); });
+        eventBus->register_handler<ops::FifoDeleteEvent>([](const ops::FifoDeleteEvent &evt)
+                                                         {
+                                                             invalidate_archive_index();
+                                                             if (selected_run_id == evt.run_id)
+                                                             {
+                                                                 std::vector<std::string> runs = get_archive_run_ids();
+                                                                 if (runs.empty())
+                                                                     selected_run_id.clear();
+                                                                 else
+                                                                     selected_run_id = runs.front();
+                                                             }
+                                                         });
+        eventBus->register_handler<ops::ArchiveChangedEvent>([](const ops::ArchiveChangedEvent &)
+                                                             { invalidate_archive_index(); });
+
         load_archive_index();
     }
 
@@ -298,6 +390,9 @@ namespace satdump
 
     void renderMainUI()
     {
+        if (recorder_app)
+            recorder_app->tick_background();
+
         if (update_ui)
         {
             style::setStyle();
@@ -360,22 +455,12 @@ namespace satdump
                                 ImVec2 cursor = ImGui::GetCursorPos();
                                 ImGui::SetCursorPosX(cursor.x + (max_image - draw_w) * 0.5f);
                                 if (ImGui::ImageButton((void *)(intptr_t)entry.texture_id, ImVec2(draw_w, draw_h)))
-                                {
-                                    selected_run_id = entry.run_id;
-                                    if (std::filesystem::exists(entry.dataset_path))
-                                        viewer_app->loadDatasetInViewer(entry.dataset_path);
-                                    current_screen = Screen::Viewer;
-                                }
+                                    open_run_in_viewer(entry.run_id);
                             }
                             else
                             {
                                 if (ImGui::Button("Нет\nминиатюры", ImVec2(max_image, max_image)))
-                                {
-                                    selected_run_id = entry.run_id;
-                                    if (std::filesystem::exists(entry.dataset_path))
-                                        viewer_app->loadDatasetInViewer(entry.dataset_path);
-                                    current_screen = Screen::Viewer;
-                                }
+                                    open_run_in_viewer(entry.run_id);
                             }
 
                             ImGui::TextWrapped("%s", entry.label.c_str());

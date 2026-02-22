@@ -155,6 +155,11 @@ namespace satdump
     {
         if (is_started)
             return;
+        if (!source_ptr)
+        {
+            set_sdr_status("offline");
+            return;
+        }
 
         set_frequency(frequency_hz);
 
@@ -196,6 +201,8 @@ namespace satdump
     {
         if (!is_started)
             return;
+        if (!source_ptr)
+            return;
 
         splitter->stop_tmp();
         if (current_decimation > 1)
@@ -204,13 +211,16 @@ namespace satdump
         is_started = false;
         source_ptr->set_status(dsp::DSPSampleSource::SourceStatus::Offline);
         set_sdr_status("offline");
-        config::main_cfg["user"]["recorder_sdr_settings"]["last_used_sdr"] = sources[sdr_select_id].name;
-        config::main_cfg["user"]["recorder_sdr_settings"][sources[sdr_select_id].name] = source_ptr->get_settings();
-        config::main_cfg["user"]["recorder_sdr_settings"][sources[sdr_select_id].name]["samplerate"] = source_ptr->get_samplerate();
-        config::main_cfg["user"]["recorder_sdr_settings"][sources[sdr_select_id].name]["frequency"] = frequency_hz;
-        config::main_cfg["user"]["recorder_sdr_settings"][sources[sdr_select_id].name]["xconverter_frequency"] = xconverter_frequency;
-        config::main_cfg["user"]["recorder_sdr_settings"][sources[sdr_select_id].name]["decimation"] = current_decimation;
-        config::saveUserConfig();
+        if (sdr_select_id >= 0 && sdr_select_id < (int)sources.size())
+        {
+            config::main_cfg["user"]["recorder_sdr_settings"]["last_used_sdr"] = sources[sdr_select_id].name;
+            config::main_cfg["user"]["recorder_sdr_settings"][sources[sdr_select_id].name] = source_ptr->get_settings();
+            config::main_cfg["user"]["recorder_sdr_settings"][sources[sdr_select_id].name]["samplerate"] = source_ptr->get_samplerate();
+            config::main_cfg["user"]["recorder_sdr_settings"][sources[sdr_select_id].name]["frequency"] = frequency_hz;
+            config::main_cfg["user"]["recorder_sdr_settings"][sources[sdr_select_id].name]["xconverter_frequency"] = xconverter_frequency;
+            config::main_cfg["user"]["recorder_sdr_settings"][sources[sdr_select_id].name]["decimation"] = current_decimation;
+            config::saveUserConfig();
+        }
     }
 
     bool RecorderApplication::is_meteor_pipeline_active() const
@@ -235,6 +245,12 @@ namespace satdump
 
         sdr_status = status;
         set_status_env("SDR_STATUS", status);
+        if (status == "online")
+            ops::set_sdr_stage(ops::SdrStage::Online);
+        else if (status == "error")
+            ops::set_sdr_stage(ops::SdrStage::Error);
+        else
+            ops::set_sdr_stage(ops::SdrStage::Offline);
     }
 
     void RecorderApplication::set_rx_status(const std::string &status)
@@ -244,12 +260,26 @@ namespace satdump
 
         rx_status = status;
         set_status_env("RX_STATUS", status);
+        if (status == "waiting")
+            ops::set_rx_stage(ops::RxStage::WaitingSignal);
+        else if (status == "receiving")
+            ops::set_rx_stage(ops::RxStage::Receiving);
+        else if (status == "decoding")
+            ops::set_rx_stage(ops::RxStage::Decoding);
+        else if (status == "error")
+            ops::set_rx_stage(ops::RxStage::Error);
+        else
+            ops::set_rx_stage(ops::RxStage::Idle);
     }
 
     void RecorderApplication::handle_source_restart()
     {
         if (!source_ptr)
+        {
+            if (appliance_mode)
+                select_rtl_source_or_fail();
             return;
+        }
 
         auto status = source_ptr->get_status();
         bool sdr_online = status == dsp::DSPSampleSource::SourceStatus::Online;
@@ -263,9 +293,9 @@ namespace satdump
         if (sdr_online && !no_iq_timeout)
         {
             if (is_processing)
-                set_rx_status("running");
+                set_rx_status(ops::get_state().first_valid_frame ? "receiving" : "waiting");
             else
-                set_rx_status("stopped");
+                set_rx_status("idle");
 
             set_sdr_status("online");
             source_restart_pending = false;
@@ -280,7 +310,7 @@ namespace satdump
             if (no_iq_timeout)
             {
                 logger->warn("No IQ data detected for over 5 seconds, restarting...");
-                set_rx_status("no_iq");
+                set_rx_status("waiting");
             }
             else
             {
@@ -297,12 +327,12 @@ namespace satdump
             {
                 pipeline_restart_pending = true;
                 stop_processing();
-                set_rx_status("restarting");
+                set_rx_status("waiting");
             }
 
             source_ptr->close();
             source_restart_pending = true;
-            set_sdr_status("restarting");
+            set_sdr_status("offline");
             source_restart_time = now + std::chrono::seconds(source_restart_backoff_seconds);
             return;
         }
@@ -337,11 +367,14 @@ namespace satdump
 
         source_restart_backoff_seconds = std::min(source_restart_backoff_seconds * 2, 60);
         source_restart_time = now + std::chrono::seconds(source_restart_backoff_seconds);
-        set_sdr_status("restarting");
+        set_sdr_status("offline");
     }
 
     void RecorderApplication::try_load_sdr_settings()
     {
+        if (!source_ptr || sdr_select_id < 0 || sdr_select_id >= (int)sources.size())
+            return;
+
         if (config::main_cfg["user"].contains("recorder_sdr_settings"))
         {
             if (config::main_cfg["user"]["recorder_sdr_settings"].contains(sources[sdr_select_id].name))
@@ -408,7 +441,7 @@ namespace satdump
                 splitter->set_enabled("live", true);
 
                 is_processing = true;
-                set_rx_status("running");
+                set_rx_status("waiting");
             }
             catch (std::runtime_error &e)
             {
@@ -429,6 +462,7 @@ namespace satdump
     {
         if (is_processing)
         {
+            set_rx_status("decoding");
             is_stopping_processing = true;
             logger->trace("Stop pipeline...");
             splitter->set_enabled("live", false);
@@ -442,6 +476,7 @@ namespace satdump
             if (finalized)
                 eventBus->fire_event<ops::RunFinalizedEvent>({pipeline_run_id, pipeline_output_dir});
 
+            bool launched_postproc = false;
             if (config::main_cfg["user_interface"]["finish_processing_after_live"]["value"].get<bool>() && !output_files.empty())
             {
                 Pipeline pipeline = pipeline_selector.selected_pipeline;
@@ -450,13 +485,98 @@ namespace satdump
                 std::string input_level = pipeline.steps[start_level].level_name;
                 ui_thread_pool.push([=](int)
                                     { processing::process(pipeline, input_level, input_file, output_dir_for_processing, pipeline_params); });
+                launched_postproc = true;
             }
 
             live_pipeline.reset();
+            processing::package_run_output(output_dir_for_processing, pipeline_run_id);
             processing::enforce_images_disk_limit(output_dir_for_processing);
             ops::set_pipeline_active(false);
-            set_rx_status("stopped");
+            if (!launched_postproc)
+                set_rx_status("idle");
         }
+    }
+
+    bool RecorderApplication::select_rtl_source_or_fail()
+    {
+        if (appliance_mode)
+        {
+            std::vector<dsp::SourceDescriptor> fresh_sources = dsp::getAllAvailableSources();
+            std::vector<dsp::SourceDescriptor> rtl_sources;
+            for (const auto &src : fresh_sources)
+            {
+                std::string key = src.source_type + " " + src.name + " " + src.unique_id;
+                std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c)
+                               { return static_cast<char>(std::tolower(c)); });
+                if (key.find("rtl") != std::string::npos || key.find("rtl2832") != std::string::npos)
+                    rtl_sources.push_back(src);
+            }
+            sources = rtl_sources;
+        }
+
+        for (int i = 0; i < (int)sources.size(); i++)
+        {
+            try
+            {
+                source_ptr = dsp::getSourceFromDescriptor(sources[i]);
+                source_ptr->open();
+                sdr_select_id = i;
+                set_sdr_status("online");
+                source_restart_pending = false;
+                source_restart_backoff_seconds = 3;
+                return true;
+            }
+            catch (std::runtime_error &e)
+            {
+                logger->error(e.what());
+            }
+        }
+
+        set_sdr_status("offline");
+        return false;
+    }
+
+    void RecorderApplication::autostart_appliance_pipeline()
+    {
+        if (!appliance_mode)
+            return;
+
+        if (!source_ptr && !select_rtl_source_or_fail())
+            return;
+
+        if (!is_started)
+            start();
+
+        if (!is_started)
+            return;
+
+        pipeline_selector.select_pipeline("meteor_m2-x_lrpt");
+        if (!is_processing)
+            start_processing();
+    }
+
+    void RecorderApplication::tick_background()
+    {
+        if (appliance_mode && !source_ptr)
+        {
+            auto now = std::chrono::steady_clock::now();
+            if (source_restart_pending && now < source_restart_time)
+                return;
+
+            if (!select_rtl_source_or_fail())
+            {
+                source_restart_pending = true;
+                source_restart_time = now + std::chrono::seconds(source_restart_backoff_seconds);
+                source_restart_backoff_seconds = std::min(source_restart_backoff_seconds * 2, 60);
+                return;
+            }
+        }
+        if (appliance_mode && source_ptr && !is_started)
+            start();
+        if (appliance_mode && is_started && !is_processing)
+            autostart_appliance_pipeline();
+
+        handle_source_restart();
     }
 
     void RecorderApplication::start_recording()

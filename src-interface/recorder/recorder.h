@@ -152,6 +152,7 @@ namespace satdump
         std::chrono::steady_clock::time_point source_restart_time;
         int source_restart_backoff_seconds = 3;
         bool pipeline_restart_pending = false;
+        bool appliance_mode = false;
 
         std::string sdr_status = "offline";
         std::string rx_status = "stopped";
@@ -201,6 +202,8 @@ namespace satdump
 
         void try_init_tracking_widget();
         void handle_source_restart();
+        void autostart_appliance_pipeline();
+        bool select_rtl_source_or_fail();
         bool is_meteor_pipeline_active() const;
         void set_sdr_status(const std::string &status);
         void set_rx_status(const std::string &status);
@@ -242,6 +245,8 @@ namespace satdump
                 return dsp::DSPSampleSource::SourceStatus::Offline;
             return source_ptr->get_status();
         }
+
+        void tick_background();
 
         void save_settings()
         {

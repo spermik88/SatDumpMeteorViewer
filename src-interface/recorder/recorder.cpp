@@ -16,19 +16,41 @@
 #include "processing.h"
 
 #include "resources.h"
+#include <algorithm>
+#include <cctype>
 
 namespace satdump
 {
     RecorderApplication::RecorderApplication()
         : Application("recorder"), pipeline_selector(true)
     {
+#ifdef __ANDROID__
+        appliance_mode = true;
+#endif
         automated_live_output_dir = config::main_cfg["satdump_directories"]["live_processing_autogen"]["value"].get<bool>();
+        if (appliance_mode)
+            automated_live_output_dir = true;
         processing_modules_floating_windows = config::main_cfg["user_interface"]["recorder_floating_windows"]["value"].get<bool>();
         remaining_disk_space_time = config::main_cfg["user_interface"]["remaining_disk_space_time"]["value"].get<int>();
 
         load_rec_path_data();
         dsp::registerAllSources();
         sources = dsp::getAllAvailableSources();
+
+        if (appliance_mode)
+        {
+            std::vector<dsp::SourceDescriptor> rtl_sources;
+            rtl_sources.reserve(sources.size());
+            for (const auto &src : sources)
+            {
+                std::string key = src.source_type + " " + src.name + " " + src.unique_id;
+                std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c)
+                               { return static_cast<char>(std::tolower(c)); });
+                if (key.find("rtl") != std::string::npos || key.find("rtl2832") != std::string::npos)
+                    rtl_sources.push_back(src);
+            }
+            sources = rtl_sources;
+        }
 
         for (dsp::SourceDescriptor src : sources)
         {
@@ -121,10 +143,14 @@ namespace satdump
             }
         }
 
-        set_frequency(frequency_hz);
-        try_load_sdr_settings();
+        if (source_ptr)
+        {
+            set_frequency(frequency_hz);
+            try_load_sdr_settings();
+        }
 
-        splitter = std::make_shared<dsp::SplitterBlock>(source_ptr->output_stream);
+        std::shared_ptr<dsp::stream<complex_t>> source_stream = source_ptr ? source_ptr->output_stream : std::make_shared<dsp::stream<complex_t>>();
+        splitter = std::make_shared<dsp::SplitterBlock>(source_stream);
         splitter->add_output("record");
         splitter->add_output("live");
 
@@ -153,7 +179,7 @@ namespace satdump
         waterfall_plot->set_rate(fft_rate, waterfall_rate);
 
         // Attempt to apply provided CLI settings
-        if (satdump::config::main_cfg.contains("cli"))
+        if (source_ptr && satdump::config::main_cfg.contains("cli"))
         {
             auto &cli_settings = satdump::config::main_cfg["cli"];
             if (source_ptr)
@@ -222,7 +248,9 @@ namespace satdump
                                                                     } });
 
         set_sdr_status(is_started ? "online" : "offline");
-        set_rx_status(is_processing ? "running" : "stopped");
+        set_rx_status(is_processing ? "waiting" : "idle");
+        if (appliance_mode)
+            autostart_appliance_pipeline();
     }
 
     RecorderApplication::~RecorderApplication()
@@ -237,11 +265,17 @@ namespace satdump
         stop_processing();
         if (is_started)
             stop();
-        source_ptr->close();
-        splitter->input_stream = std::make_shared<dsp::stream<complex_t>>();
-        splitter->stop();
-        fft->stop();
-        file_sink->stop();
+        if (source_ptr)
+            source_ptr->close();
+        if (splitter)
+        {
+            splitter->input_stream = std::make_shared<dsp::stream<complex_t>>();
+            splitter->stop();
+        }
+        if (fft)
+            fft->stop();
+        if (file_sink)
+            file_sink->stop();
 
         if (tracking_widget != nullptr)
             delete tracking_widget;
@@ -251,6 +285,9 @@ namespace satdump
 
     void RecorderApplication::drawUI()
     {
+        if (appliance_mode)
+            return;
+
         handle_source_restart();
 
         ImVec2 recorder_size = ImGui::GetContentRegionAvail();

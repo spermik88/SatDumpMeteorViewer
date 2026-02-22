@@ -256,6 +256,164 @@ namespace satdump
 
                 image::save_img(composite, (run_path / "composite.png").string());
             }
+
+            bool generate_preview_and_layers(const std::filesystem::path &run_path,
+                                             std::vector<std::string> &layers_out,
+                                             int &default_layer)
+            {
+                std::filesystem::path dataset_path = run_path / "dataset.json";
+                if (!std::filesystem::exists(dataset_path))
+                    return false;
+
+                ProductDataSet dataset;
+                try
+                {
+                    dataset.load(dataset_path.string());
+                }
+                catch (const std::exception &)
+                {
+                    return false;
+                }
+
+                std::shared_ptr<ImageProducts> image_products;
+                for (const auto &product_entry : dataset.products_list)
+                {
+                    std::filesystem::path product_path = product_entry;
+                    if (product_path.is_relative())
+                        product_path = run_path / product_path;
+
+                    try
+                    {
+                        std::shared_ptr<Products> products = loadProducts(product_path.string());
+                        auto candidate = std::dynamic_pointer_cast<ImageProducts>(products);
+                        if (candidate && !candidate->images.empty())
+                        {
+                            image_products = candidate;
+                            break;
+                        }
+                    }
+                    catch (const std::exception &)
+                    {
+                    }
+                }
+
+                if (!image_products)
+                    return false;
+
+                int layer_index = 0;
+                for (const auto &img_holder : image_products->images)
+                {
+                    if (img_holder.image.width() == 0 || img_holder.image.height() == 0)
+                        continue;
+
+                    layer_index++;
+                    if (layer_index > 6)
+                        break;
+
+                    std::string layer_name = "layer" + std::to_string(layer_index) + ".png";
+                    image::save_img(img_holder.image, (run_path / layer_name).string());
+                    layers_out.push_back(layer_name);
+                }
+
+                if (layers_out.empty())
+                    return false;
+
+                default_layer = 1;
+                std::filesystem::path preview_path = run_path / "preview.png";
+                if (!std::filesystem::exists(preview_path))
+                {
+                    image::Image preview_image;
+                    image::load_img(preview_image, (run_path / layers_out.front()).string());
+                    if (preview_image.width() > 0 && preview_image.height() > 0)
+                        image::save_img(preview_image, preview_path.string());
+                }
+
+                return std::filesystem::exists(preview_path);
+            }
+
+            void generate_thumb_for_run(const std::filesystem::path &run_path)
+            {
+                std::filesystem::path thumb_path = run_path / "thumb.png";
+                if (std::filesystem::exists(thumb_path))
+                    return;
+
+                std::filesystem::path preview_path = run_path / "preview.png";
+                if (!std::filesystem::exists(preview_path))
+                    return;
+
+                image::Image preview;
+                image::load_img(preview, preview_path.string());
+                if (preview.width() == 0 || preview.height() == 0)
+                    return;
+
+                const int max_size = 256;
+                size_t width = preview.width();
+                size_t height = preview.height();
+                size_t max_dim = std::max(width, height);
+                if (max_dim > static_cast<size_t>(max_size))
+                {
+                    double scale = static_cast<double>(max_size) / static_cast<double>(max_dim);
+                    int new_width = std::max(1, static_cast<int>(width * scale));
+                    int new_height = std::max(1, static_cast<int>(height * scale));
+                    preview.resize_bilinear(new_width, new_height, false);
+                }
+
+                image::save_img(preview, thumb_path.string());
+            }
+
+            void write_meta_for_run(const std::filesystem::path &run_path,
+                                    const std::string &run_id,
+                                    const std::vector<std::string> &layers,
+                                    int default_layer)
+            {
+                double timestamp = 0.0;
+                std::filesystem::path dataset_path = run_path / "dataset.json";
+                if (std::filesystem::exists(dataset_path))
+                {
+                    try
+                    {
+                        ProductDataSet dataset;
+                        dataset.load(dataset_path.string());
+                        timestamp = dataset.timestamp;
+                    }
+                    catch (const std::exception &)
+                    {
+                    }
+                }
+                if (timestamp <= 0.0)
+                    timestamp = static_cast<double>(std::time(nullptr));
+
+                nlohmann::ordered_json meta;
+                meta["run_id"] = run_id;
+                meta["timestamp"] = timestamp;
+                meta["datetime_local"] = timestamp_to_string(timestamp);
+                meta["source"] = "meteor_lrpt";
+                meta["preview"] = "preview.png";
+                meta["layers"] = layers;
+                meta["default_layer"] = default_layer;
+                meta["has_composite"] = std::filesystem::exists(run_path / "composite.png");
+
+                saveJsonFile((run_path / "meta.json").string(), meta);
+            }
+        }
+
+        void package_run_output(const std::string &output_dir, const std::string &run_id)
+        {
+            std::filesystem::path run_path(output_dir);
+            if (!std::filesystem::exists(run_path))
+                return;
+
+            std::vector<std::string> layers;
+            int default_layer = 1;
+            if (!generate_preview_and_layers(run_path, layers, default_layer))
+                return;
+
+            generate_composite_for_run(run_path);
+            generate_thumb_for_run(run_path);
+
+            std::string effective_run_id = run_id.empty() ? run_path.filename().string() : run_id;
+            write_meta_for_run(run_path, effective_run_id, layers, default_layer);
+            eventBus->fire_event<ops::ArchiveChangedEvent>({"run_packaged", effective_run_id});
         }
 
         void enforce_images_disk_limit(const std::string &output_file)
@@ -315,6 +473,7 @@ namespace satdump
                     continue;
                 }
                 eventBus->fire_event<ops::FifoDeleteEvent>({entry.run_id, entry.path.string()});
+                eventBus->fire_event<ops::ArchiveChangedEvent>({"fifo_delete", entry.run_id});
                 remove_run_from_index(base_path, entry.run_id);
                 if (total_size >= entry.size)
                     total_size -= entry.size;
@@ -375,7 +534,7 @@ namespace satdump
 
             logger->info("Done! Goodbye");
 
-            generate_composite_for_run(output_file);
+            package_run_output(output_file);
 
             if (config::main_cfg["user_interface"]["open_viewer_post_processing"]["value"].get<bool>())
             {
@@ -387,6 +546,7 @@ namespace satdump
             }
 
             enforce_images_disk_limit(output_file);
+            ops::set_rx_stage(ops::RxStage::Idle);
 
             processing_mutex.unlock();
         }

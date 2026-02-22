@@ -639,38 +639,37 @@ namespace satdump
 
     void ViewerApplication::switchPass(int offset)
     {
-        if (opened_datasets.empty() || products_and_handlers.empty())
+        std::vector<std::string> run_ids = get_archive_run_ids();
+        if (run_ids.empty())
             return;
 
-        const std::string &current_dataset = products_and_handlers[current_handler_id]->dataset_name;
-        if (current_dataset.empty())
+        std::string current_run = selected_run_id;
+        if (current_run.empty())
+            current_run = run_ids.front();
+
+        auto it = std::find(run_ids.begin(), run_ids.end(), current_run);
+        if (it == run_ids.end())
             return;
 
-        auto it = std::find(opened_datasets.begin(), opened_datasets.end(), current_dataset);
-        if (it == opened_datasets.end())
-            return;
-
-        int current_index = static_cast<int>(std::distance(opened_datasets.begin(), it));
+        int current_index = static_cast<int>(std::distance(run_ids.begin(), it));
         int target_index = current_index + offset;
         if (target_index < 0)
-            target_index = static_cast<int>(opened_datasets.size()) - 1;
-        else if (target_index >= static_cast<int>(opened_datasets.size()))
+            target_index = static_cast<int>(run_ids.size()) - 1;
+        else if (target_index >= static_cast<int>(run_ids.size()))
             target_index = 0;
 
-        const std::string &target_dataset = opened_datasets[target_index];
-        for (int i = 0; i < (int)products_and_handlers.size(); ++i)
-        {
-            if (products_and_handlers[i]->dataset_name == target_dataset)
-            {
-                current_handler_id = i;
-                markLayerCompositeDirty();
-                break;
-            }
-        }
+        open_run_in_viewer(run_ids[target_index]);
+        markLayerCompositeDirty();
     }
 
     void ViewerApplication::drawPanel()
     {
+        if (is_appliance_mode())
+        {
+            current_selected_tab = 0;
+            return;
+        }
+
         if (ImGui::BeginTabBar("Viewer Prob Tabbar", ImGuiTabBarFlags_None))
         {
             ImGui::SetNextItemWidth(ImGui::GetWindowWidth() / 2);
@@ -809,6 +808,33 @@ namespace satdump
 
     void ViewerApplication::drawUI()
     {
+        if (is_appliance_mode())
+        {
+            ImVec2 content_size = ImGui::GetContentRegionAvail();
+            ImVec2 content_pos = ImGui::GetCursorScreenPos();
+            if (products_and_handlers.size() > 0)
+            {
+                auto handler = products_and_handlers[current_handler_id]->handler;
+                updateLayerModelFromHandler(handler);
+                if (dynamic_cast<ImageViewerHandler *>(handler.get()))
+                {
+                    updateLayerComposite();
+                    if (layer_mode == LayerMode::Stack)
+                    {
+                        for (size_t i = 0; i < kLayerCount; ++i)
+                            stack_layer_views[i].syncTextures();
+                    }
+                    layer_view.draw(content_size);
+                }
+                else
+                {
+                    handler->drawContents(content_size);
+                }
+                handleSwipePassNavigation(ImRect(content_pos, ImVec2(content_pos.x + content_size.x, content_pos.y + content_size.y)));
+            }
+            return;
+        }
+
         ImVec2 viewer_size = ImGui::GetContentRegionAvail();
         float viewer_width = std::max(viewer_size.x, 1.0f);
         panel_ratio = clampPanelRatio(panel_ratio, viewer_width);

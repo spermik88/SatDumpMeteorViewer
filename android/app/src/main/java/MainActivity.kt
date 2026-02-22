@@ -79,7 +79,6 @@ class MainActivity : NativeActivity(), TextWatcher {
         // Ask for required permissions, without these the app cannot run.
         checkAndAsk(Manifest.permission.WRITE_EXTERNAL_STORAGE);
         checkAndAsk(Manifest.permission.READ_EXTERNAL_STORAGE);
-        checkAndAsk(Manifest.permission.INTERNET);
 
         // Register events
         //        usbManager = getSystemService(Context.USB_SERVICE) as UsbManager;

@@ -235,24 +235,26 @@ namespace satdump
             if (ImGui::BeginMenuBar())
             {
                 ops::OpsStateSnapshot ops_state = ops::get_state();
-                std::string rx_label = "остановлен";
+                std::string rx_label = "ожидание";
                 ImVec4 rx_color = style::theme.yellow.Value;
-                if (ops_state.pipeline_active)
+                if (ops_state.rx_stage == ops::RxStage::Receiving)
                 {
-                    if (ops_state.first_valid_frame)
-                    {
-                        rx_label = "приём";
-                        rx_color = style::theme.green.Value;
-                    }
-                    else
-                    {
-                        rx_label = "ожидание";
-                        rx_color = style::theme.yellow.Value;
-                    }
+                    rx_label = "приём";
+                    rx_color = style::theme.green.Value;
+                }
+                else if (ops_state.rx_stage == ops::RxStage::Decoding)
+                {
+                    rx_label = "декодирование";
+                    rx_color = style::theme.yellow.Value;
+                }
+                else if (ops_state.rx_stage == ops::RxStage::Error)
+                {
+                    rx_label = "ошибка";
+                    rx_color = style::theme.red.Value;
                 }
                 else if (ops_state.run_finalized)
                 {
-                    rx_label = "завершено";
+                    rx_label = "ожидание";
                     rx_color = style::theme.green.Value;
                 }
 
@@ -262,19 +264,15 @@ namespace satdump
 
                 const char *sdr_label = "офлайн";
                 ImVec4 sdr_color = style::theme.yellow.Value;
-                if (recorder_app)
+                if (ops_state.sdr_stage == ops::SdrStage::Online)
                 {
-                    auto status = recorder_app->get_source_status();
-                    if (status == dsp::DSPSampleSource::SourceStatus::Online)
-                    {
-                        sdr_label = "онлайн";
-                        sdr_color = style::theme.green.Value;
-                    }
-                    else if (status == dsp::DSPSampleSource::SourceStatus::Error)
-                    {
-                        sdr_label = "ошибка";
-                        sdr_color = style::theme.red.Value;
-                    }
+                    sdr_label = "онлайн";
+                    sdr_color = style::theme.green.Value;
+                }
+                else if (ops_state.sdr_stage == ops::SdrStage::Error)
+                {
+                    sdr_label = "ошибка";
+                    sdr_color = style::theme.red.Value;
                 }
 
                 ImGui::TextColored(sdr_color, "SDR: %s", sdr_label);
@@ -286,9 +284,9 @@ namespace satdump
                 float button_width = ImGui::CalcTextSize("Назад").x + (ImGui::GetStyle().FramePadding.x * 2.0f);
                 float button_x = ImGui::GetWindowContentRegionMax().x - button_width;
                 ImGui::SetCursorPosX(button_x);
-                ImGui::BeginDisabled(current_screen == Screen::Viewer);
+                ImGui::BeginDisabled(current_screen == Screen::Archive);
                 if (ImGui::Button("Назад"))
-                    current_screen = Screen::Viewer;
+                    current_screen = Screen::Archive;
                 ImGui::EndDisabled();
 
                 total_height += static_cast<int>(ImGui::GetWindowHeight());

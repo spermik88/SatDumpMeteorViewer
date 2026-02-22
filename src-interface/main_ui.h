@@ -2,6 +2,7 @@
 
 #include "dll_export.h"
 #include <string>
+#include <vector>
 #include "libs/ctpl/ctpl_stl.h"
 #include "app.h"
 #include "viewer/viewer.h"
@@ -23,6 +24,11 @@ namespace satdump
     SATDUMP_DLL2 extern std::shared_ptr<ViewerApplication> viewer_app;
     SATDUMP_DLL2 extern Screen current_screen;
     SATDUMP_DLL2 extern std::string selected_run_id;
+
+    bool is_appliance_mode();
+    void invalidate_archive_index();
+    std::vector<std::string> get_archive_run_ids();
+    bool open_run_in_viewer(const std::string &run_id);
 
     void initMainUI();
     void exitMainUI();

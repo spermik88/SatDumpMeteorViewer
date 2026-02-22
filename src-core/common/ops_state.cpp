@@ -2,6 +2,7 @@
 #include "core/plugin.h"
 #include "logger.h"
 
+#include <ctime>
 #include <filesystem>
 #include <mutex>
 
@@ -23,9 +24,13 @@ namespace satdump::ops
                                                                                 std::string run_id = normalize_run_id(evt.run_id);
                                                                                 {
                                                                                     std::lock_guard<std::mutex> lock(ops_state_mutex);
-                                                                                    ops_state.last_event = "first_valid_frame";
-                                                                                    if (ops_state.live_run_id.empty() || ops_state.live_run_id == run_id)
+                                                                                   ops_state.last_event = "first_valid_frame";
+                                                                                   if (ops_state.live_run_id.empty() || ops_state.live_run_id == run_id)
+                                                                                    {
                                                                                         ops_state.first_valid_frame = true;
+                                                                                        ops_state.rx_stage = RxStage::Receiving;
+                                                                                        ops_state.last_first_valid_frame_ts = static_cast<double>(std::time(nullptr));
+                                                                                    }
                                                                                 }
                                                                                 logger->info("Event first_valid_frame: run_id=%s source=%s",
                                                                                              run_id.c_str(),
@@ -43,6 +48,8 @@ namespace satdump::ops
                                                                                  {
                                                                                      ops_state.run_finalized = true;
                                                                                      ops_state.pipeline_active = false;
+                                                                                     ops_state.rx_stage = RxStage::Decoding;
+                                                                                     ops_state.last_run_finalized_ts = static_cast<double>(std::time(nullptr));
                                                                                  }
                                                                              }
                                                                              logger->info("Event run_finalized: run_id=%s output_dir=%s",
@@ -80,17 +87,37 @@ namespace satdump::ops
         ops_state.live_run_id = run_id;
         ops_state.live_tmp_dir = tmp_dir;
         ops_state.live_final_dir = final_dir;
+        ops_state.current_run_id = run_id;
+        ops_state.current_run_tmp_dir = tmp_dir;
+        ops_state.current_run_final_dir = final_dir;
         ops_state.live_start_timestamp = start_timestamp;
         ops_state.pipeline_active = true;
         ops_state.first_valid_frame = false;
         ops_state.run_finalized = false;
         ops_state.fifo_delete = false;
+        ops_state.rx_stage = RxStage::WaitingSignal;
     }
 
     void set_pipeline_active(bool active)
     {
         std::lock_guard<std::mutex> lock(ops_state_mutex);
         ops_state.pipeline_active = active;
+        if (!active &&
+            ops_state.rx_stage != RxStage::Error &&
+            ops_state.rx_stage != RxStage::Decoding)
+            ops_state.rx_stage = RxStage::Idle;
+    }
+
+    void set_rx_stage(RxStage stage)
+    {
+        std::lock_guard<std::mutex> lock(ops_state_mutex);
+        ops_state.rx_stage = stage;
+    }
+
+    void set_sdr_stage(SdrStage stage)
+    {
+        std::lock_guard<std::mutex> lock(ops_state_mutex);
+        ops_state.sdr_stage = stage;
     }
 
     std::string normalize_run_id(const std::string &name)
