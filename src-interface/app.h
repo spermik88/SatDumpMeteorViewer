@@ -17,7 +17,7 @@ namespace satdump
 
     public:
         Application(std::string id);
-        ~Application();
+        virtual ~Application();
 
         void drawWindow();
         void draw();

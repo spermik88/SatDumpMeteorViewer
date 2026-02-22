@@ -38,7 +38,7 @@ namespace dsp
             d_got_input = true;
             output_stream = std::make_shared<dsp::stream<OUT_T>>();
         }
-        ~Block()
+        virtual ~Block()
         {
             if (should_run)
             {
@@ -77,9 +77,7 @@ namespace dsp
         HierBlock(std::shared_ptr<dsp::stream<IN_T>> input) : input_stream(input)
         {
         }
-        ~HierBlock()
-        {
-        }
+        virtual ~HierBlock() = default;
         virtual void start() = 0;
         virtual void stop() = 0;
     };

@@ -29,6 +29,8 @@ import android.widget.EditText
 import android.widget.RelativeLayout
 import androidx.core.app.ActivityCompat
 import androidx.core.content.PermissionChecker
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
 // Extension on intent
 fun Intent?.getFilePath(context: Context): String {
@@ -97,7 +99,10 @@ class MainActivity : NativeActivity(), TextWatcher {
         // }
 
         // Hide system bars
-        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        val insetsController = WindowInsetsControllerCompat(window, window.decorView)
+        insetsController.hide(WindowInsetsCompat.Type.systemBars())
+        insetsController.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
         // Keep screen on
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -190,7 +195,7 @@ class MainActivity : NativeActivity(), TextWatcher {
         if(editText!!.getText().toString() != lastFiller) {
             if(before < count) {
                 var char2 = s.get(s.length - 1);
-                unicodeCharacterQueue.offer(char2.toInt());
+                unicodeCharacterQueue.offer(char2.code);
             } else if(before > count) {
                 unicodeCharacterQueue.offer(8); // BackSpace
             }

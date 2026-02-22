@@ -175,7 +175,7 @@ namespace dsp
 
             case CS_32:
                 input_file.read((char*)buffer_s32, buffer_size * sizeof(int32_t) * 2);
-                volk_32i_s32f_convert_32f_u((float *)output_buffer, (const int32_t*)buffer_s32, 2147483647, buffer_size * 2);
+                volk_32i_s32f_convert_32f_u((float *)output_buffer, (const int32_t*)buffer_s32, 2147483647.0f, buffer_size * 2);
                 break;
 
             case WAV_16: case CS_16:

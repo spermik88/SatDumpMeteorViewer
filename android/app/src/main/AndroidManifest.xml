@@ -5,8 +5,7 @@
         android:label="SatDump"
         android:icon="@mipmap/ic_launcher_round"
         android:allowBackup="true"
-        android:hasCode="true"
-        android:extractNativeLibs="true">
+        android:hasCode="true">
         <!--android:requestLegacyExternalStorage="true"-->
 
         <activity

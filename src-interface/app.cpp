@@ -28,6 +28,6 @@ namespace satdump
 
     void Application::drawUI()
     {
-        ImGui::Text("Nothing implemented there yet!");
+        ImGui::Text("Раздел пока не реализован.");
     }
 };

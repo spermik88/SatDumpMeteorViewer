@@ -37,14 +37,14 @@ namespace satdump
 
             pipeline_selector->renderParamTable();
 
-            if (ImGui::Button("Start"))
+            if (ImGui::Button("Запустить"))
             {
                 nlohmann::json params2 = pipeline_selector->getParameters();
 
                 if (!pipeline_selector->inputfileselect.isValid())
-                    error_message.set_message(style::theme.red, "Input file is invalid!");
+                    error_message.set_message(style::theme.red, "Неверный входной файл!");
                 else if (!pipeline_selector->outputdirselect.isValid())
-                    error_message.set_message(style::theme.red, "Output folder is invalid!");
+                    error_message.set_message(style::theme.red, "Неверная выходная папка!");
                 else
                     ui_thread_pool.push([&, params2](int)
                                         { processing::process(pipeline_selector->selected_pipeline,

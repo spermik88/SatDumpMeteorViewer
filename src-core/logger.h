@@ -40,6 +40,7 @@ namespace slog
         std::string format_log(LogMsg m, bool color, int *cpos = nullptr);
 
     public:
+        virtual ~LoggerSink() = default;
         virtual void receive(LogMsg log) = 0;
         void set_level(LogLevel lvl) { sink_lvl = lvl; }
     };

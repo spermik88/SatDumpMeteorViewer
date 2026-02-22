@@ -338,7 +338,7 @@ namespace satdump
 
             ImGui::SameLine();
             projection_layers_mtx.lock();
-            if (active_layers == projection_layers.size())
+            if (active_layers == static_cast<int>(projection_layers.size()))
                 style::beginDisabled();
             if (ImGui::Button("Все"))
             {
@@ -346,7 +346,7 @@ namespace satdump
                     lay.enabled = true;
                 logger->info("Все слои проекции включены");
             }
-            if (active_layers == projection_layers.size())
+            if (active_layers == static_cast<int>(projection_layers.size()))
                 style::endDisabled();
 
             ImGui::SameLine();
