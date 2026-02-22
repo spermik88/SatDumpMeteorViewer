@@ -311,7 +311,8 @@ namespace satdump
                         break;
 
                     std::string layer_name = "layer" + std::to_string(layer_index) + ".png";
-                    image::save_img(img_holder.image, (run_path / layer_name).string());
+                    image::Image layer_image = img_holder.image;
+                    image::save_img(layer_image, (run_path / layer_name).string());
                     layers_out.push_back(layer_name);
                 }
 
