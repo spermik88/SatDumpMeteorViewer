@@ -17,13 +17,8 @@
 #include "common/ops_state.h"
 
 #include <algorithm>
-#include <chrono>
-#include <ctime>
 #include <filesystem>
-#include <iomanip>
 #include <mutex>
-#include <optional>
-#include <sstream>
 
 #include "imgui/implot/implot.h"
 #include "imgui/implot3d/implot3d.h"
@@ -73,37 +68,71 @@ namespace satdump
             return std::filesystem::path("images");
         }
 
-        double file_time_to_timestamp(const std::filesystem::file_time_type &ftime)
+        bool parse_archive_meta(const nlohmann::ordered_json &meta,
+                                const std::filesystem::path &run_dir,
+                                ArchiveEntry &item)
         {
-            auto system_time = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
-                ftime - std::filesystem::file_time_type::clock::now() + std::chrono::system_clock::now());
-            return static_cast<double>(std::chrono::system_clock::to_time_t(system_time));
-        }
+            if (!meta.is_object())
+                return false;
+            if (!meta.contains("run_id") || !meta["run_id"].is_string())
+                return false;
+            if (!meta.contains("timestamp") || !meta["timestamp"].is_number())
+                return false;
+            if (!meta.contains("datetime_local") || !meta["datetime_local"].is_string())
+                return false;
+            if (!meta.contains("preview") || !meta["preview"].is_string())
+                return false;
+            if (!meta.contains("source") || !meta["source"].is_string())
+                return false;
+            if (meta["source"].get<std::string>() != "meteor_lrpt")
+                return false;
+            if (!meta.contains("layers") || !meta["layers"].is_array())
+                return false;
+            if (!meta.contains("default_layer") || !meta["default_layer"].is_number_integer())
+                return false;
+            if (!meta.contains("has_composite") || !meta["has_composite"].is_boolean())
+                return false;
 
-        std::optional<double> parse_timestamp(const std::string &value)
-        {
-            static const std::vector<const char *> formats = {
-                "%Y-%m-%d_%H-%M-%S",
-                "%Y-%m-%d_%H:%M:%S",
-                "%Y-%m-%dT%H:%M:%S",
-                "%Y%m%d_%H%M%S",
-                "%Y%m%d%H%M%S",
-            };
+            std::string run_id = meta["run_id"].get<std::string>();
+            if (run_id.empty() || run_id != run_dir.filename().string())
+                return false;
 
-            for (const char *format : formats)
+            auto layers = meta["layers"].get<std::vector<std::string>>();
+            if (layers.empty() || layers.size() > 6)
+                return false;
+            for (const auto &layer_name : layers)
             {
-                std::tm tm = {};
-                std::istringstream input(value);
-                input >> std::get_time(&tm, format);
-                if (!input.fail())
-                {
-                    std::time_t result = std::mktime(&tm);
-                    if (result != -1)
-                        return static_cast<double>(result);
-                }
+                if (layer_name.empty())
+                    return false;
+                if (!std::filesystem::exists(run_dir / layer_name))
+                    return false;
             }
 
-            return std::nullopt;
+            int default_layer = meta["default_layer"].get<int>();
+            if (default_layer < 1 || default_layer > static_cast<int>(layers.size()))
+                return false;
+
+            std::filesystem::path preview_path = run_dir / meta["preview"].get<std::string>();
+            if (!std::filesystem::exists(preview_path))
+                return false;
+
+            bool has_composite = meta["has_composite"].get<bool>();
+            if (has_composite && !std::filesystem::exists(run_dir / "composite.png"))
+                return false;
+
+            std::filesystem::path dataset_path = run_dir / "dataset.json";
+            if (!std::filesystem::exists(dataset_path))
+                return false;
+
+            item.run_id = run_id;
+            item.directory_path = run_dir.string();
+            item.dataset_path = dataset_path.string();
+            item.thumb_path = (run_dir / "thumb.png").string();
+            item.timestamp = meta["timestamp"].get<double>();
+            item.label = meta["datetime_local"].get<std::string>();
+            if (item.label.empty() && item.timestamp > 0.0)
+                item.label = timestamp_to_string(item.timestamp);
+            return true;
         }
 
         void generate_thumbnail_if_needed(const std::filesystem::path &dir_path)
@@ -154,10 +183,6 @@ namespace satdump
                     continue;
 
                 ArchiveEntry item;
-                item.run_id = entry.path().filename().string();
-                item.directory_path = entry.path().string();
-                item.dataset_path = (entry.path() / "dataset.json").string();
-                item.thumb_path = (entry.path() / "thumb.png").string();
 
                 std::filesystem::path meta_path = entry.path() / "meta.json";
                 if (!std::filesystem::exists(meta_path))
@@ -173,47 +198,8 @@ namespace satdump
                     continue;
                 }
 
-                if (meta.contains("timestamp"))
-                {
-                    if (meta["timestamp"].is_number())
-                    {
-                        item.timestamp = meta["timestamp"].get<double>();
-                        item.label = timestamp_to_string(item.timestamp);
-                    }
-                    else if (meta["timestamp"].is_string())
-                    {
-                        item.label = meta["timestamp"].get<std::string>();
-                        auto parsed = parse_timestamp(item.label);
-                        if (parsed.has_value())
-                            item.timestamp = parsed.value();
-                    }
-                }
-
-                if (item.label.empty())
-                {
-                    if (meta.contains("datetime") && meta["datetime"].is_string())
-                        item.label = meta["datetime"].get<std::string>();
-                    else if (meta.contains("time") && meta["time"].is_string())
-                        item.label = meta["time"].get<std::string>();
-                }
-
-                if (item.timestamp == 0.0)
-                {
-                    auto parsed = parse_timestamp(item.run_id);
-                    if (parsed.has_value())
-                        item.timestamp = parsed.value();
-                }
-
-                if (item.timestamp == 0.0)
-                    item.timestamp = file_time_to_timestamp(entry.last_write_time());
-
-                if (item.label.empty())
-                {
-                    if (item.timestamp > 0.0)
-                        item.label = timestamp_to_string(item.timestamp);
-                    else
-                        item.label = item.run_id;
-                }
+                if (!parse_archive_meta(meta, entry.path(), item))
+                    continue;
 
                 generate_thumbnail_if_needed(entry.path());
 
@@ -368,9 +354,12 @@ namespace satdump
                                                              {
                                                                  std::vector<std::string> runs = get_archive_run_ids();
                                                                  if (runs.empty())
+                                                                 {
                                                                      selected_run_id.clear();
+                                                                     current_screen = Screen::Archive;
+                                                                 }
                                                                  else
-                                                                     selected_run_id = runs.front();
+                                                                     open_run_in_viewer(runs.front());
                                                              }
                                                          });
         eventBus->register_handler<ops::ArchiveChangedEvent>([](const ops::ArchiveChangedEvent &)

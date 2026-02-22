@@ -113,8 +113,10 @@ namespace satdump
         if (tle_file_override == "")
         {
             loadTLEFileIntoRegistry(user_path + "/satdump_tles.txt");
+#ifndef __ANDROID__
             if (tle_do_update_on_init)
                 autoUpdateTLE(user_path + "/satdump_tles.txt");
+#endif
         }
         else
         {

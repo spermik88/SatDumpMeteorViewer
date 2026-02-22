@@ -134,6 +134,8 @@ namespace satdump
         std::string pipeline_output_dir_tmp;
         std::string pipeline_run_id;
         nlohmann::json pipeline_params;
+        std::string first_valid_frame_emitted_run_id;
+        std::chrono::steady_clock::time_point next_first_valid_probe_time = std::chrono::steady_clock::time_point::min();
 
         int pipeline_preset_id = 0;
 
@@ -204,7 +206,10 @@ namespace satdump
         void handle_source_restart();
         void autostart_appliance_pipeline();
         bool select_rtl_source_or_fail();
+        bool is_rtl_source_descriptor(const dsp::SourceDescriptor &src) const;
         bool is_meteor_pipeline_active() const;
+        bool has_first_valid_frame_artifact(const std::string &run_dir) const;
+        void maybe_emit_first_valid_frame();
         void set_sdr_status(const std::string &status);
         void set_rx_status(const std::string &status);
 

@@ -160,6 +160,11 @@ namespace satdump
                     ImGui::TableSetColumnIndex(0);
                     ImGui::Text("Обновить TLE");
                     ImGui::TableSetColumnIndex(1);
+#ifdef __ANDROID__
+                    style::beginDisabled();
+                    ImGui::Button("Offline");
+                    style::endDisabled();
+#else
                     bool disable_update_button = tles_are_update;
                     if (disable_update_button)
                         style::beginDisabled();
@@ -172,6 +177,7 @@ namespace satdump
                     }
                     if (disable_update_button)
                         style::endDisabled();
+#endif
 
                     time_t last_update = getValueOrDefault<time_t>(config::main_cfg["user"]["tles_last_updated"], 0);
                     if (last_update == 0)
@@ -282,7 +288,9 @@ namespace satdump
 
                 // Re-initialize auto TLE update
                 taskScheduler->del_task("auto_tle_update");
+#ifndef __ANDROID__
                 autoUpdateTLE(user_path + "/satdump_tles.txt");
+#endif
 
                 // Save config files
                 config::saveUserConfig();

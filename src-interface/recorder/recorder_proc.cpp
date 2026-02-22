@@ -5,6 +5,9 @@
 #include "processing.h"
 #include "common/ops_state.h"
 #include "core/plugin.h"
+#include "products/dataset.h"
+#include "products/image_products.h"
+#include "products/products.h"
 #include <algorithm>
 #include <chrono>
 #include <cctype>
@@ -158,6 +161,8 @@ namespace satdump
         if (!source_ptr)
         {
             set_sdr_status("offline");
+            if (appliance_mode)
+                set_rx_status("waiting");
             return;
         }
 
@@ -238,6 +243,88 @@ namespace satdump
         return (name.rfind("meteor_", 0) == 0) || (readable.find("meteor") != std::string::npos);
     }
 
+    bool RecorderApplication::is_rtl_source_descriptor(const dsp::SourceDescriptor &src) const
+    {
+        std::string key = src.source_type + " " + src.name + " " + src.unique_id;
+        std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c)
+                       { return static_cast<char>(std::tolower(c)); });
+        return key.find("rtlsdr") != std::string::npos ||
+               key.find("rtl2832") != std::string::npos ||
+               key.find("rtl-sdr") != std::string::npos ||
+               key.find(" rtl ") != std::string::npos ||
+               key.rfind("rtl ", 0) == 0;
+    }
+
+    bool RecorderApplication::has_first_valid_frame_artifact(const std::string &run_dir) const
+    {
+        if (run_dir.empty())
+            return false;
+
+        std::filesystem::path dataset_path = std::filesystem::path(run_dir) / "dataset.json";
+        if (!std::filesystem::exists(dataset_path))
+            return false;
+
+        ProductDataSet dataset;
+        try
+        {
+            dataset.load(dataset_path.string());
+        }
+        catch (const std::exception &)
+        {
+            return false;
+        }
+
+        if (dataset.products_list.empty())
+            return false;
+
+        for (const auto &product_entry : dataset.products_list)
+        {
+            std::filesystem::path product_path = product_entry;
+            if (product_path.is_relative())
+                product_path = std::filesystem::path(run_dir) / product_path;
+
+            try
+            {
+                std::shared_ptr<Products> products = loadProducts(product_path.string());
+                auto image_products = std::dynamic_pointer_cast<ImageProducts>(products);
+                if (!image_products)
+                    continue;
+
+                for (const auto &img_holder : image_products->images)
+                {
+                    if (img_holder.image.width() > 0 && img_holder.image.height() > 0)
+                        return true;
+                }
+            }
+            catch (const std::exception &)
+            {
+            }
+        }
+
+        return false;
+    }
+
+    void RecorderApplication::maybe_emit_first_valid_frame()
+    {
+        if (!is_processing || pipeline_run_id.empty())
+            return;
+        if (first_valid_frame_emitted_run_id == pipeline_run_id)
+            return;
+
+        auto now = std::chrono::steady_clock::now();
+        if (now < next_first_valid_probe_time)
+            return;
+        next_first_valid_probe_time = now + std::chrono::seconds(1);
+
+        std::string probe_dir = pipeline_output_dir_tmp.empty() ? pipeline_output_dir : pipeline_output_dir_tmp;
+        if (!has_first_valid_frame_artifact(probe_dir))
+            return;
+
+        eventBus->fire_event<ops::FirstValidFrameEvent>({pipeline_run_id, "live_dataset"});
+        first_valid_frame_emitted_run_id = pipeline_run_id;
+        set_rx_status("receiving");
+    }
+
     void RecorderApplication::set_sdr_status(const std::string &status)
     {
         if (sdr_status == status)
@@ -277,7 +364,10 @@ namespace satdump
         if (!source_ptr)
         {
             if (appliance_mode)
+            {
+                set_rx_status("waiting");
                 select_rtl_source_or_fail();
+            }
             return;
         }
 
@@ -430,6 +520,8 @@ namespace satdump
                     throw std::runtime_error("Failed to prepare live output directory");
 
                 pipeline_run_id = ops::normalize_run_id(std::filesystem::path(pipeline_output_dir).filename().string());
+                first_valid_frame_emitted_run_id.clear();
+                next_first_valid_probe_time = std::chrono::steady_clock::time_point::min();
                 ops::set_live_run(pipeline_run_id,
                                   pipeline_output_dir_tmp,
                                   pipeline_output_dir,
@@ -505,10 +597,7 @@ namespace satdump
             std::vector<dsp::SourceDescriptor> rtl_sources;
             for (const auto &src : fresh_sources)
             {
-                std::string key = src.source_type + " " + src.name + " " + src.unique_id;
-                std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c)
-                               { return static_cast<char>(std::tolower(c)); });
-                if (key.find("rtl") != std::string::npos || key.find("rtl2832") != std::string::npos)
+                if (is_rtl_source_descriptor(src))
                     rtl_sources.push_back(src);
             }
             sources = rtl_sources;
@@ -565,6 +654,7 @@ namespace satdump
 
             if (!select_rtl_source_or_fail())
             {
+                set_rx_status("waiting");
                 source_restart_pending = true;
                 source_restart_time = now + std::chrono::seconds(source_restart_backoff_seconds);
                 source_restart_backoff_seconds = std::min(source_restart_backoff_seconds * 2, 60);
@@ -575,6 +665,7 @@ namespace satdump
             start();
         if (appliance_mode && is_started && !is_processing)
             autostart_appliance_pipeline();
+        maybe_emit_first_valid_frame();
 
         handle_source_restart();
     }

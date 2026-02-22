@@ -43,10 +43,7 @@ namespace satdump
             rtl_sources.reserve(sources.size());
             for (const auto &src : sources)
             {
-                std::string key = src.source_type + " " + src.name + " " + src.unique_id;
-                std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c)
-                               { return static_cast<char>(std::tolower(c)); });
-                if (key.find("rtl") != std::string::npos || key.find("rtl2832") != std::string::npos)
+                if (is_rtl_source_descriptor(src))
                     rtl_sources.push_back(src);
             }
             sources = rtl_sources;
@@ -248,7 +245,10 @@ namespace satdump
                                                                     } });
 
         set_sdr_status(is_started ? "online" : "offline");
-        set_rx_status(is_processing ? "waiting" : "idle");
+        if (appliance_mode)
+            set_rx_status("waiting");
+        else
+            set_rx_status(is_processing ? "waiting" : "idle");
         if (appliance_mode)
             autostart_appliance_pipeline();
     }
