@@ -35,9 +35,9 @@ namespace satdump
                 active_layers++;
         projection_layers_mtx.unlock();
         
-        if (ImGui::CollapsingHeader("Projection", ImGuiTreeNodeFlags_DefaultOpen))
+        if (ImGui::CollapsingHeader("Проекция", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            ImGui::Text("Output image : ");
+            ImGui::Text("Выходное изображение:");
             ImGui::SetNextItemWidth(ImGui::GetWindowWidth() * 0.40f);
             ImGui::InputInt("##width", &projections_image_width, 0);
             ImGui::SameLine();
@@ -51,10 +51,10 @@ namespace satdump
             ImGui::Spacing();
 
             ImGui::SetNextItemWidth(ImGui::GetWindowWidth() * 0.96f);
-            ImGui::Combo("##targetproj", &projections_current_selected_proj, "Equirectangular\0"
-                                                                             "UTM (Mercator)\0"
-                                                                             "Stereo\0"
-                                                                             "Satellite (TPERS)\0"
+            ImGui::Combo("##targetproj", &projections_current_selected_proj, "Эквидистантная цилиндрическая\0"
+                                                                             "UTM (Меркатор)\0"
+                                                                             "Стереографическая\0"
+                                                                             "Спутниковая (TPERS)\0"
                          //  "Azimuthal Equidistant\0"
             );
 
@@ -62,46 +62,46 @@ namespace satdump
             {
                 if (!projection_auto_mode)
                 {
-                    ImGui::Text("Top Left Coordinates :");
+                    ImGui::Text("Координаты верхнего левого угла:");
                     ImGui::InputFloat("Lat##tl", &projections_equirectangular_tl_lat);
                     ImGui::InputFloat("Lon##tl", &projections_equirectangular_tl_lon);
                     ImGui::Spacing();
-                    ImGui::Text("Bottom Right Coordinates :");
+                    ImGui::Text("Координаты нижнего правого угла:");
                     ImGui::InputFloat("Lat##br", &projections_equirectangular_br_lat);
                     ImGui::InputFloat("Lon##br", &projections_equirectangular_br_lon);
                 }
             }
             else if (projections_current_selected_proj == 1)
             {
-                ImGui::InputInt("UTM Zone###projutmzone", &projections_utm_zone);
+                ImGui::InputInt("Зона UTM###projutmzone", &projections_utm_zone);
                 if (projections_utm_zone > 60)
                     projections_utm_zone = 60;
                 if (projections_utm_zone < 1)
                     projections_utm_zone = 1;
-                ImGui::Checkbox("South###projutmsouth", &projections_utm_south);
-                ImGui::InputFloat("Northing (m)##utm", &projections_utm_offset_y);
+                ImGui::Checkbox("Южное полушарие###projutmsouth", &projections_utm_south);
+                ImGui::InputFloat("Смещение по северингу (м)##utm", &projections_utm_offset_y);
                 ImGui::Spacing();
-                ImGui::InputFloat("Scale (m/px)##utm", &projections_utm_scale);
+                ImGui::InputFloat("Масштаб (м/пикс)##utm", &projections_utm_scale);
             }
             else if (projections_current_selected_proj == 2)
             {
-                ImGui::Text("Center Coordinates :");
+                ImGui::Text("Координаты центра:");
                 ImGui::InputFloat("Lat##stereo", &projections_stereo_center_lat);
                 ImGui::InputFloat("Lon##stereo", &projections_stereo_center_lon);
                 ImGui::Spacing();
-                ImGui::InputFloat("Scale (m/px)##stereo", &projections_stereo_scale);
+                ImGui::InputFloat("Масштаб (м/пикс)##stereo", &projections_stereo_scale);
             }
             else if (projections_current_selected_proj == 3)
             {
-                ImGui::Text("Center Coordinates :");
+                ImGui::Text("Координаты центра:");
                 ImGui::InputFloat("Lat##tpers", &projections_tpers_lat);
                 ImGui::InputFloat("Lon##tpers", &projections_tpers_lon);
                 ImGui::Spacing();
-                ImGui::InputFloat("Altitude (m)##tpers", &projections_tpers_alt);
-                ImGui::InputFloat("Angle##tpers", &projections_tpers_ang);
-                ImGui::InputFloat("Azimuth##tpers", &projections_tpers_azi);
+                ImGui::InputFloat("Высота (м)##tpers", &projections_tpers_alt);
+                ImGui::InputFloat("Наклон##tpers", &projections_tpers_ang);
+                ImGui::InputFloat("Азимут##tpers", &projections_tpers_azi);
                 ImGui::Spacing();
-                ImGui::InputFloat("Scale##tpers", &projections_tpers_scale);
+                ImGui::InputFloat("Масштаб##tpers", &projections_tpers_scale);
             }
             /*else if (projections_current_selected_proj == 4)
             {
@@ -112,12 +112,12 @@ namespace satdump
 
             if (projections_current_selected_proj == 0 || projections_current_selected_proj == 2)
             {
-                ImGui::Checkbox("Auto Mode###pojautomode", &projection_auto_mode);
-                ImGui::Checkbox("Auto Scale Mode##projautoscalemode", &projection_auto_scale_mode);
+                ImGui::Checkbox("Автоматический режим###pojautomode", &projection_auto_mode);
+                ImGui::Checkbox("Автоматический масштаб##projautoscalemode", &projection_auto_scale_mode);
                 if (projection_auto_scale_mode)
                 {
-                    ImGui::InputDouble("Scale X (m/px)##projscalexauto", &projection_autoscale_x);
-                    ImGui::InputDouble("Scale Y (m/px)##projscalexauto", &projection_autoscale_y);
+                    ImGui::InputDouble("Масштаб X (м/пикс)##projscalexauto", &projection_autoscale_x);
+                    ImGui::InputDouble("Масштаб Y (м/пикс)##projscalexauto", &projection_autoscale_y);
                 }
             }
 
@@ -127,21 +127,21 @@ namespace satdump
 
             if (disable_buttons || active_layers == 0)
                 style::beginDisabled();
-            if (ImGui::Button("Generate Projection"))
+            if (ImGui::Button("Сгенерировать проекцию"))
             {
                 auto fun = [this](int)
                 {
-                    logger->info("Update projection...");
+                    logger->info("Обновление проекции...");
                     try
                     {
                         generateProjectionImage();
                     }
                     catch (std::exception &e)
                     {
-                        logger->error("Lego should be happy!\n%s", e.what());
+                        logger->error("Ошибка генерации проекции:\n%s", e.what());
                         projections_are_generating = false;
                     }
-                    logger->info("Done");
+                    logger->info("Готово");
                 };
                 ui_thread_pool.push(fun);
             }
@@ -153,67 +153,67 @@ namespace satdump
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             {
                 if (projections_are_generating)
-                    ImGui::SetTooltip("Generating, please wait...");
+                    ImGui::SetTooltip("Генерация, пожалуйста подождите...");
                 if (projection_layers.size() == 0)
-                    ImGui::SetTooltip("No layers loaded!");
+                    ImGui::SetTooltip("Слои не загружены");
                 if (active_layers == 0)
-                    ImGui::SetTooltip("No layers active for projection!");
+                    ImGui::SetTooltip("Нет активных слоёв для проекции");
             }
 
             ImGui::Spacing();
 
-            if (ImGui::Button("Save Projected Image"))
+            if (ImGui::Button("Сохранить проекцию"))
             {
                 ui_thread_pool.push([this](int)
                                     {   projections_are_generating = true;
-                        logger->info("Saving Projection...");
+                        logger->info("Сохранение проекции...");
                         std::string default_path = config::main_cfg["satdump_directories"]["default_projection_output_directory"]["value"].get<std::string>();
-                        std::string saved_at = save_image_dialog("projection", default_path, "Save Projection", &projected_image_result, &viewer_app->save_type);
+                        std::string saved_at = save_image_dialog("projection", default_path, "Сохранить проекцию", &projected_image_result, &viewer_app->save_type);
 
                         if (saved_at == "")
-                            logger->info("Save cancelled");
+                            logger->info("Сохранение отменено");
                         else
-                            logger->info("Saved current projection at %s", saved_at.c_str());
+                            logger->info("Проекция сохранена: %s", saved_at.c_str());
                         projections_are_generating = false; });
             }
 
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             {
                 if (projections_are_generating)
-                    ImGui::SetTooltip("Generating, please wait...");
+                    ImGui::SetTooltip("Генерация, пожалуйста подождите...");
                 if (projection_layers.size() == 0)
-                    ImGui::SetTooltip("No layers loaded!");
+                    ImGui::SetTooltip("Слои не загружены");
                 if (active_layers == 0)
-                    ImGui::SetTooltip("No layers active for projection!");
+                    ImGui::SetTooltip("Нет активных слоёв для проекции");
             }
             if (disable_buttons || active_layers == 0)
                 style::endDisabled();
         }
-        if (ImGui::CollapsingHeader("Layers"))
+        if (ImGui::CollapsingHeader("Слои"))
         {
             ImGui::BeginGroup();
-            ImGui::Text("Mode :  ");
+            ImGui::Text("Режим:");
             ImGui::SameLine();
-            ImGui::Text("Blend");
+            ImGui::Text("Смешивание");
             ImGui::SameLine();
 
             ImGui::SetNextItemWidth(50);
             ToggleButton("##projtog", &projections_mode_radio);
             ImGui::SameLine();
-            ImGui::Text("Overlay");
+            ImGui::Text("Наложение");
             ImGui::EndGroup();
 
             ImGui::Separator(); //////////////////////////////////////////////////////
 
-            ImGui::Text("Layers :");
+            ImGui::Text("Слои:");
 
             if (disable_buttons)
                 style::beginDisabled();
 
             ImGui::SameLine();
             ImGuiStyle &imguistyle = ImGui::GetStyle();
-            ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - ((projections_loading_new_layer ? 16.0 * ui_scale + imguistyle.ItemSpacing.x : 0) + 
-                                                                  ImGui::CalcTextSize("Add Layer").x + ImGui::CalcTextSize("All").x + ImGui::CalcTextSize("None").x +
+            ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - ((projections_loading_new_layer ? 16.0 * ui_scale + imguistyle.ItemSpacing.x : 0) +
+                                                                  ImGui::CalcTextSize("Добавить слой").x + ImGui::CalcTextSize("Все").x + ImGui::CalcTextSize("Ничего").x +
                                                                   imguistyle.FramePadding.x * 6 + imguistyle.ItemSpacing.x * 2));
 
             if (projections_loading_new_layer)
@@ -222,30 +222,30 @@ namespace satdump
                 ImGui::SameLine();
             }
 
-            if (ImGui::Button("Add Layer##button"))
-                ImGui::OpenPopup("Add Layer##popup", ImGuiPopupFlags_None);
+            if (ImGui::Button("Добавить слой##button"))
+                ImGui::OpenPopup("Добавить слой##popup", ImGuiPopupFlags_None);
 
             if (disable_buttons)
                 style::endDisabled();
 
             {
-                if (ImGui::BeginPopupModal("Add Layer##popup", NULL, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize))
+                if (ImGui::BeginPopupModal("Добавить слой##popup", NULL, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize))
                 {
                     ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-                    ImGui::RadioButton("Equirectangular", &selected_external_type, 0);
-                    ImGui::RadioButton("Tile Map (OSM)", &selected_external_type, 1);
+                    ImGui::RadioButton("Эквидистантная цилиндрическая", &selected_external_type, 0);
+                    ImGui::RadioButton("Тайловая карта (OSM)", &selected_external_type, 1);
                     ImGui::RadioButton("GeoTIFF", &selected_external_type, 2);
-                    ImGui::RadioButton("Other", &selected_external_type, 3);
+                    ImGui::RadioButton("Другое", &selected_external_type, 3);
 
                     if (selected_external_type == 0 ||
                         selected_external_type == 2 ||
                         selected_external_type == 3)
                     {
-                        ImGui::InputText("Name", &projection_new_layer_name);
-                        projection_new_layer_file.draw("Input Image");
+                        ImGui::InputText("Название", &projection_new_layer_name);
+                        projection_new_layer_file.draw("Входное изображение");
                         if (selected_external_type == 3)
-                            projection_new_layer_cfg.draw("Projection Config File");
-                        ImGui::Checkbox("Normalize###normalizeinput", &projection_normalize_image);
+                            projection_new_layer_cfg.draw("Файл конфигурации проекции");
+                        ImGui::Checkbox("Нормализовать###normalizeinput", &projection_normalize_image);
                     }
                     else if (selected_external_type == 1)
                     {
@@ -253,21 +253,21 @@ namespace satdump
                         ImGui::InputDouble("Lon1##osmlat1", &projection_osm_lon1);
                         ImGui::InputDouble("Lat2##osmlat1", &projection_osm_lat2);
                         ImGui::InputDouble("Lon2##osmlat1", &projection_osm_lon2);
-                        ImGui::SliderInt("Zoom##osmsliderzoom", &projection_osm_zoom, 0, 6);
+                        ImGui::SliderInt("Масштаб##osmsliderzoom", &projection_osm_zoom, 0, 6);
                         if (!urlgood)
                             ImGui::PushStyleColor(ImGuiCol_Text, style::theme.red.Value);
 
-                        ImGui::InputText("Tile URL", &mapurl, ImGuiInputTextFlags_None);
+                        ImGui::InputText("URL тайлов", &mapurl, ImGuiInputTextFlags_None);
 
                         if (!urlgood)
                         {
                             if (ImGui::IsItemHovered())
-                                ImGui::SetTooltip("Invalid URL! must be https://server/{z}/{x}/{y}.ext");
+                                ImGui::SetTooltip("Некорректный URL. Должно быть: https://server/{z}/{x}/{y}.ext");
                             ImGui::PopStyleColor();
                         }
                     }
 
-                    if (ImGui::Button("Add layer"))
+                    if (ImGui::Button("Добавить слой"))
                     {
                         auto func = [this](int)
                         {
@@ -289,7 +289,7 @@ namespace satdump
                             {
                                 try
                                 {
-                                    logger->info("Generating tile map");
+                                    logger->info("Генерация тайловой карты");
                                     image::Image timemap = downloadTileMap(mapurl, projection_osm_lat1, projection_osm_lon1, projection_osm_lat2, projection_osm_lon2, projection_osm_zoom);
 
                                     projection_layers_mtx.lock();
@@ -298,7 +298,7 @@ namespace satdump
                                 }
                                 catch (std::exception &e)
                                 {
-                                    logger->error("Could not load tile map! %s", e.what());
+                                    logger->error("Не удалось загрузить тайловую карту: %s", e.what());
                                     projections_loading_new_layer = false;
                                 }
                             }
@@ -329,7 +329,7 @@ namespace satdump
 
                     ImGui::SameLine();
 
-                    if (ImGui::Button("Cancel"))
+                    if (ImGui::Button("Отмена"))
                         ImGui::CloseCurrentPopup();
 
                     ImGui::EndPopup();
@@ -340,11 +340,11 @@ namespace satdump
             projection_layers_mtx.lock();
             if (active_layers == projection_layers.size())
                 style::beginDisabled();
-            if (ImGui::Button("All"))
+            if (ImGui::Button("Все"))
             {
                 for (auto &lay : projection_layers)
                     lay.enabled = true;
-                logger->info("Enabled all layers for projection");
+                logger->info("Все слои проекции включены");
             }
             if (active_layers == projection_layers.size())
                 style::endDisabled();
@@ -353,11 +353,11 @@ namespace satdump
 
             if (active_layers == 0)
                 style::beginDisabled();
-            if (ImGui::Button("None"))
+            if (ImGui::Button("Ничего"))
             {
                 for (auto &lay : projection_layers)
                     lay.enabled = false;
-                logger->info("Disabled all layers for projection");
+                logger->info("Все слои проекции отключены");
             }
             if (active_layers == 0)
                 style::endDisabled();
@@ -408,7 +408,7 @@ namespace satdump
                             break;
                         }
                         if (projections_are_generating && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                            ImGui::SetTooltip("Wait for the processing to finish!");
+                            ImGui::SetTooltip("Дождитесь завершения обработки");
                         ImGui::PopStyleVar();
                         ImGui::PopStyleColor(2);
                         if (disable_buttons)
@@ -424,10 +424,10 @@ namespace satdump
                         ImGui::BeginGroup();
                         if (projections_mode_radio == 0)
                             style::beginDisabled();
-                        FancySlider(std::string("##opacitylayer" + layer.name + std::to_string(i)).c_str(), "Opacity", &layer.opacity, ImGui::GetWindowWidth() - 76 * ui_scale);
+                        FancySlider(std::string("##opacitylayer" + layer.name + std::to_string(i)).c_str(), "Непрозрачность", &layer.opacity, ImGui::GetWindowWidth() - 76 * ui_scale);
                         if (projections_mode_radio == 0)
                         {
-                            ImGui::SetItemTooltip("%s", "Opacity is for overlay mode only");
+                            ImGui::SetItemTooltip("%s", "Непрозрачность используется только в режиме наложения");
                             style::endDisabled();
                         }
                         ImGui::ProgressBar(layer.progress, ImVec2(ImGui::GetWindowWidth() - 76 * ui_scale, ImGui::GetFrameHeight()));
@@ -480,7 +480,7 @@ namespace satdump
             if (!disable_buttons)
                 style::endDisabled();
         }
-        if (ImGui::CollapsingHeader("Overlay##viewerpojoverlay"))
+        if (ImGui::CollapsingHeader("Оверлей##viewerpojoverlay"))
         {
             projection_overlay_handler.drawUI();
         }
@@ -565,7 +565,7 @@ namespace satdump
         std::vector<image::Image> layers_images =
             generateAllProjectionLayers(projection_layers, projections_image_width, projections_image_height, cfg, &general_progress);
 
-        logger->info("Combining images...");
+        logger->info("Объединение изображений...");
         if (projections_mode_radio == 0) // Blend
         {
             projected_image_result = image::blend_images(layers_images);
@@ -588,7 +588,7 @@ namespace satdump
         // Free up memory
         layers_images.clear();
 
-        logger->info("Applying overlays...");
+        logger->info("Наложение оверлеев...");
 
         // Setup projection to draw stuff on top
         auto proj_func = satdump::reprojection::setupProjectionFunction(projections_image_width, projections_image_height, cfg, {});

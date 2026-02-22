@@ -57,10 +57,15 @@ namespace satdump
         const std::string app_id;
         virtual void drawUI();
 
-        float panel_ratio = 0.23;
+        static constexpr float kDefaultPanelRatio = 0.23f;
+        static constexpr float kMinPanelWidthPx = 340.0f;
+        static constexpr float kMaxPanelRatio = 0.60f;
+        float panel_ratio = kDefaultPanelRatio;
         float last_width = -1.0f;
+        float panelMinRatio(float viewer_width) const;
+        float clampPanelRatio(float ratio, float viewer_width) const;
 
-        FileSelectWidget select_dataset_products_dialog = FileSelectWidget("Dataset/Products", "Select Dataset/Products", false, true);
+        FileSelectWidget select_dataset_products_dialog = FileSelectWidget("Набор данных/Продукты", "Выберите набор данных/продукты", false, true);
 
         struct ProductsHandler
         {
@@ -166,10 +171,10 @@ namespace satdump
         std::deque<ProjectionLayer> projection_layers;
 
         int selected_external_type = 0;
-        std::string projection_new_layer_name = "Ext Layer";
+        std::string projection_new_layer_name = "Внешний слой";
         bool projection_normalize_image = false;
-        FileSelectWidget projection_new_layer_file = FileSelectWidget("Image (Equ)", "Select Layer Image");
-        FileSelectWidget projection_new_layer_cfg = FileSelectWidget("Config (JSON)", "Select Projection Config");
+        FileSelectWidget projection_new_layer_file = FileSelectWidget("Изображение (экв.)", "Выберите изображение слоя");
+        FileSelectWidget projection_new_layer_cfg = FileSelectWidget("Конфиг (JSON)", "Выберите конфигурацию проекции");
         bool projections_loading_new_layer = false;
 
         bool projection_auto_mode = false, projection_auto_scale_mode = false;

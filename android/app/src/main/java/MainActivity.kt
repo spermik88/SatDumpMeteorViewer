@@ -16,6 +16,7 @@ import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.text.Editable
@@ -41,6 +42,7 @@ fun Intent?.getFilePathDir(context: Context): String {
 
 class MainActivity : NativeActivity(), TextWatcher {
     private val TAG : String = "SatDump";
+    private val FORCED_ORIENTATION: Int = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
 
     fun checkAndAsk(permission: String) {
         if (PermissionChecker.checkSelfPermission(this, permission) != PermissionChecker.PERMISSION_GRANTED) {
@@ -70,6 +72,7 @@ class MainActivity : NativeActivity(), TextWatcher {
 
     public override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestedOrientation = FORCED_ORIENTATION
 
         // Ask for required permissions, without these the app cannot run.
         checkAndAsk(Manifest.permission.WRITE_EXTERNAL_STORAGE);
@@ -112,6 +115,13 @@ class MainActivity : NativeActivity(), TextWatcher {
         editText!!.addTextChangedListener(this);
 
         setContentView(mLayout);
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (requestedOrientation != FORCED_ORIENTATION) {
+            requestedOrientation = FORCED_ORIENTATION
+        }
     }
 
     override fun onDestroy() {
@@ -261,7 +271,7 @@ class MainActivity : NativeActivity(), TextWatcher {
         var file_intent = Intent(Intent.ACTION_GET_CONTENT);
         file_intent.setType("*/*");
         file_intent.addCategory(Intent.CATEGORY_OPENABLE);
-        val final_intent = Intent.createChooser(file_intent, "Select File");
+        val final_intent = Intent.createChooser(file_intent, "Выберите файл");
         startActivityForResult(final_intent, 1);
     }
 
@@ -277,7 +287,7 @@ class MainActivity : NativeActivity(), TextWatcher {
         var file_intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         file_intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         file_intent.addCategory(Intent.CATEGORY_DEFAULT);
-        val final_intent = Intent.createChooser(file_intent, "Select Directory");
+        val final_intent = Intent.createChooser(file_intent, "Выберите папку");
         startActivityForResult(final_intent, 2);
     }
 

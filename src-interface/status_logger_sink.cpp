@@ -101,6 +101,7 @@ namespace satdump
             return 0.0;
         }
     }
+
     StatusLoggerSink::StatusLoggerSink()
     {
         show_bar = config::main_cfg["user_interface"]["status_bar"]["value"].get<bool>();
@@ -122,13 +123,13 @@ namespace satdump
         if (log.lvl >= slog::LOG_INFO)
         {
             if (log.lvl == slog::LOG_INFO)
-                lvl = "Info";
+                lvl = "Инфо";
             else if (log.lvl == slog::LOG_WARN)
-                lvl = "Warning";
+                lvl = "Предупреждение";
             else if (log.lvl == slog::LOG_ERROR)
-                lvl = "Error";
+                lvl = "Ошибка";
             else if (log.lvl == slog::LOG_CRIT)
-                lvl = "Critical";
+                lvl = "Критично";
             else
                 lvl = "";
 
@@ -142,24 +143,24 @@ namespace satdump
             return;
 
         auto mode = viewer_app->getLayerMode();
-        ImGui::TextUnformatted("MODE");
+        ImGui::TextUnformatted("РЕЖИМ");
         ImGui::SameLine();
-        if (ImGui::RadioButton("SINGLE", mode == ViewerApplication::LayerMode::Single))
+        if (ImGui::RadioButton("ОДИН", mode == ViewerApplication::LayerMode::Single))
             viewer_app->setLayerMode(ViewerApplication::LayerMode::Single);
         ImGui::SameLine();
-        if (ImGui::RadioButton("STACK", mode == ViewerApplication::LayerMode::Stack))
+        if (ImGui::RadioButton("СТЕК", mode == ViewerApplication::LayerMode::Stack))
             viewer_app->setLayerMode(ViewerApplication::LayerMode::Stack);
 
         ImGui::SameLine();
         bool preview_enabled = viewer_app->isPreviewEnabled();
         bool preview_available = viewer_app->isPreviewAvailable();
         ImGui::BeginDisabled(!preview_available);
-        if (ImGui::Checkbox("Preview", &preview_enabled))
+        if (ImGui::Checkbox("Превью", &preview_enabled))
             viewer_app->setPreviewEnabled(preview_enabled);
         ImGui::EndDisabled();
 
         ImGui::SameLine(200 * ui_scale);
-        ImGui::TextUnformatted("Layers");
+        ImGui::TextUnformatted("Слои");
         for (size_t layer_index = 0; layer_index < ViewerApplication::kLayerCount; ++layer_index)
         {
             ImGui::SameLine();
@@ -206,7 +207,6 @@ namespace satdump
 
     int StatusLoggerSink::draw()
     {
-        // Check if status bar should be drawn
         if (!show_bar)
             return 0;
 
@@ -215,7 +215,6 @@ namespace satdump
                 if (module->getIDM() == "products_processor")
                     return 0;
 
-        // Draw status bar
         int total_height = 0;
         float row_height = ImGui::GetFrameHeight();
         if (ImGui::BeginViewportSideBar("##MainLayerBar", ImGui::GetMainViewport(), ImGuiDir_Down, row_height,
@@ -224,7 +223,6 @@ namespace satdump
             if (ImGui::BeginMenuBar())
             {
                 draw_layer_bar();
-
                 total_height = static_cast<int>(ImGui::GetWindowHeight());
                 ImGui::EndMenuBar();
             }
@@ -304,14 +302,13 @@ namespace satdump
             static ImVec2 last_size;
             ImVec2 display_size = ImGui::GetIO().DisplaySize;
             bool did_resize = display_size.x != last_size.x || display_size.y != last_size.y;
-            ImGui::SetNextWindowSize(ImVec2(display_size.x, (display_size.y * 0.3) - total_height), did_resize ? ImGuiCond_Always : ImGuiCond_Appearing);
-            ImGui::SetNextWindowPos(ImVec2(0, display_size.y * 0.7), did_resize ? ImGuiCond_Always : ImGuiCond_Appearing, ImVec2(0, 0));
+            ImGui::SetNextWindowSize(ImVec2(display_size.x, (display_size.y * 0.3f) - total_height), did_resize ? ImGuiCond_Always : ImGuiCond_Appearing);
+            ImGui::SetNextWindowPos(ImVec2(0, display_size.y * 0.7f), did_resize ? ImGuiCond_Always : ImGuiCond_Appearing, ImVec2(0, 0));
             last_size = display_size;
 
-            ImGui::SetNextWindowBgAlpha(1.0);
-            ImGui::Begin("SatDump Log", &show_log, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse);
+            ImGui::SetNextWindowBgAlpha(1.0f);
+            ImGui::Begin("Журнал SatDump", &show_log, ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse);
             widgets::LoggerSinkWidget::draw();
-
             ImGui::End();
         }
 

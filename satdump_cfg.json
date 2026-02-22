@@ -6,35 +6,35 @@
             "baseband_format": {
                 "type": "baseband_type",
                 "value": "cs8",
-                "name": "Baseband Format",
-                "description": "The sample format of the recorded baseband.\nThis depends on the settings of your recording software,\nbut some common formats are cs16 (SDR#, etc),\ncf32 (GQRX), cu8 (HDSDR), etc",
+                "name": "Формат базовой полосы",
+                "description": "Формат сэмплов записанной базовой полосы.\nЗависит от настроек вашей программы записи,\nраспространённые форматы: cs16 (SDR# и т.д.),\ncf32 (GQRX), cu8 (HDSDR) и др.",
                 "no_live": true
             },
             "samplerate": {
                 "type": "notated_int",
                 "value": 6000000,
                 "units": "sps",
-                "name": "Samplerate",
+                "name": "Частота дискретизации",
                 "no_live": true
             },
             "dc_block": {
                 "type": "bool",
                 "value": false,
-                "name": "DC Blocking",
-                "description": "DC Blocking allows removing a DC Spike / Offset present on some SDRs.\n A classic example would be the HackRF which often has this sort of issue."
+                "name": "Подавление DC",
+                "description": "Позволяет убрать DC-пик/смещение, встречающиеся у некоторых SDR.\nКлассический пример - HackRF, где такое бывает часто."
             },
             "iq_swap": {
                 "type": "bool",
                 "value": false,
-                "name": "IQ Swap",
-                "description": "In some cases, the I and Q branches can be swapped.\nThat can happen when using some downconverters,\nor perhaps some software that records the file in an unusual way."
+                "name": "Обмен I/Q",
+                "description": "Иногда каналы I и Q меняются местами.\nТакое может происходить с некоторыми downconverter-ами\nили ПО, записывающим файл в нестандартном виде."
             },
             "freq_shift": {
                 "type": "notated_int",
                 "value": 0,
                 "units": "Hz",
-                "name": "Frequency Shift",
-                "description": "Can be used to offset the signal."
+                "name": "Сдвиг частоты",
+                "description": "Используется для частотного смещения сигнала."
             }
         },
         //
@@ -46,74 +46,74 @@
         "manual_dpi_scaling": {
             "type": "float",
             "value": 1.0,
-            "name": "UI Scaling",
-            "description": "Defines the overall UI scale. This can be used to make UI elements bigger or smaller\n\n1.0 = normal\n0.5 = half size\n2.0 = double size"
+            "name": "Масштаб интерфейса",
+            "description": "Задает общий масштаб интерфейса. Позволяет сделать элементы крупнее или мельче.\n\n1.0 = обычный\n0.5 = половина\n2.0 = вдвое больше"
         },
         "play_audio": {
             "type": "bool",
             "value": true,
-            "name": "Play Audio",
-            "description": "Automatically play audio from pipelines that support it,\nlike NOAA APT and Inmarsat Aero"
+            "name": "Воспроизводить аудио",
+            "description": "Автоматически воспроизводить звук из пайплайнов, где это поддерживается,\nнапример NOAA APT и Inmarsat Aero."
         },
         "finish_processing_after_live": {
             "type": "bool",
             "value": true,
-            "name": "Finish processing when stopping live",
-            "description": "Launch an offline processing task when you press \"Stop\",\nto finish processing down to the end of the pipeline."
+            "name": "Доводить обработку после остановки live",
+            "description": "Запускать офлайн-обработку после нажатия \"Стоп\",\nчтобы завершить обработку до конца пайплайна."
         },
         "open_viewer_post_processing": {
             "type": "bool",
             "value": true,
-            "name": "Open Viewer after decoding",
-            "description": "Open the decoded data in the viewer after decoding is done"
+            "name": "Открывать Viewer после декодирования",
+            "description": "Открывать декодированные данные во Viewer после завершения декодирования."
         },
         "show_waterfall_demod_fft": {
             "type": "bool",
             "value": true,
-            "name": "Demod FFT Waterfall",
-            "description": "Enable the FFT Waterfall shown in the small FFT available in demodulators\nThis does increase CPU usage"
+            "name": "Водопад FFT демодулятора",
+            "description": "Включить водопад FFT в малом FFT-окне демодуляторов.\nУвеличивает нагрузку на CPU."
         },
         "recorder_floating_windows": {
             "type": "bool",
             "value": false,
-            "name": "Recorder Floating Windows",
-            "description": "Make module windows in the recorder float.\nThis allows dragging them around at will"
+            "name": "Плавающие окна Recorder",
+            "description": "Сделать окна модулей в Recorder плавающими,\nчтобы их можно было свободно перетаскивать."
         },
         "recorder_baseband_filename_millis_precision": {
             "type": "bool",
             "value": false,
-            "name": "Recorder Baseband Filename Milliseconds",
-            "description": "Add milliseconds to the output filenames for basebands recorded in the recorder"
+            "name": "Миллисекунды в имени baseband-файла",
+            "description": "Добавлять миллисекунды в имена выходных файлов базовой полосы в Recorder."
         },
         "status_bar": {
             "type": "bool",
             "value": true,
-            "name": "Show Status Bar",
-            "description": "Show status bar with last log at the bottom of the UI"
+            "name": "Показывать строку состояния",
+            "description": "Показывать внизу интерфейса строку состояния с последним сообщением журнала."
         },
         "remember_pos": {
             "type": "bool",
             "value": false,
-            "name": "Remember Window Size and Position",
-            "description": "Remeber size and position of the window when closing SatDump. It will open in the same configuration on next launch"
+            "name": "Запоминать размер и позицию окна",
+            "description": "Запоминать размер и позицию окна при закрытии SatDump.\nПри следующем запуске откроется в том же состоянии."
         },
         "lock_xconverter_input":{
             "type": "bool",
             "value": true,
-            "name": "Lock LO setting",
-            "description": "Decides if the LO setting should accept input while the source is running."
+            "name": "Блокировать настройку LO",
+            "description": "Определяет, можно ли менять значение LO при работающем источнике."
         },
         "advanced_mode": {
             "type": "bool",
             "value": false,
-            "name": "Advanced Mode",
-            "description": "Allows full editing of all SatDump options. Be warned: invalid configurations\nmay result in crashes, corruption of data, and more. Use at your own risk!"
+            "name": "Расширенный режим",
+            "description": "Разрешает полное редактирование всех параметров SatDump.\nНекорректные значения могут привести к сбоям, повреждению данных и другим проблемам.\nИспользуйте на свой риск."
         },
         "remaining_disk_space_time": {
             "type": "int",
             "value": 30,
-            "name": "Recorder: Time for disk space warning (in seconds)",
-            "description": "Defines the time when should the user be warned about not enough disk space.\nSet to 0 to disable"
+            "name": "Recorder: порог предупреждения о месте на диске (сек)",
+            "description": "Задает порог времени, когда нужно предупредить о нехватке места на диске.\n0 - отключить предупреждение."
         }
     },
     // More generic SatDump settings

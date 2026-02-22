@@ -320,7 +320,7 @@ namespace satdump
             else
             {
                 ImGui::BeginChild("archive_screen", ImGui::GetContentRegionAvail());
-                ImGui::TextUnformatted("Archive");
+                ImGui::TextUnformatted("Архив");
                 ImGui::Separator();
 
                 if (!archive_index_ready)
@@ -402,7 +402,7 @@ namespace satdump
                 ImGui::InputFloat("Longitude##1", &lon1);
                 ImGui::SetNextItemWidth(250);
                 ImGui::SliderInt("Zoom", &zoom, 0, 19);
-                if (ImGui::Button("Get tile from server"))
+                if (ImGui::Button("Получить тайл с сервера"))
                 {
                     // mapTile tl(tm.downloadTile(tm.coorToTile({lat, lon}, zoom), zoom));
                     img = tm.getMapImage({lat, lon}, {lat1, lon1}, zoom);

@@ -13,8 +13,8 @@
             android:name="com.altillimity.satdump.MainActivity"
             android:icon="@mipmap/ic_launcher_round"
             android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
-            android:configChanges="orientation|keyboardHidden|screenSize"
-            android:screenOrientation="portrait"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|layoutDirection|uiMode"
+            android:screenOrientation="sensorLandscape"
             android:exported="true">
             <meta-data android:name="android.app.lib_name"
                 android:value="android_imgui" />
