@@ -177,9 +177,34 @@ void RtlSdrSource::start()
     DSPSampleSource::start();
 
     rtlsdr_dev_obj = nullptr;
+    int device_count = (int)rtlsdr_get_device_count();
     int index = rtlsdr_get_index_by_serial(d_sdr_id.c_str());
-    if (index == -1 || rtlsdr_open(&rtlsdr_dev_obj, index) != 0 || rtlsdr_dev_obj == nullptr)
-        throw satdump_exception("Could not open RTL-SDR device!");
+    int open_result = 0;
+    bool open_attempted = false;
+    if (index >= 0)
+    {
+        open_attempted = true;
+        open_result = rtlsdr_open(&rtlsdr_dev_obj, index);
+    }
+
+    if (index < 0 || !open_attempted || open_result != 0 || rtlsdr_dev_obj == nullptr)
+    {
+        std::string reason = "open-failed";
+        if (device_count == 0 || index == -2)
+            reason = "no-device";
+        else if (index == -1 || index == -3)
+            reason = "serial-not-found";
+        else if (index < 0)
+            reason = "index-error";
+
+        std::string open_ret_str = open_attempted ? std::to_string(open_result) : "na";
+        throw satdump_exception("Could not open RTL-SDR device! "
+                                "[reason=" + reason +
+                                ", id=" + d_sdr_id +
+                                ", idx_by_serial=" + std::to_string(index) +
+                                ", dev_count=" + std::to_string(device_count) +
+                                ", open_ret=" + open_ret_str + "]");
+    }
 
     try
     {

@@ -850,7 +850,7 @@ namespace satdump
                 }
             }
 
-            if (source_ptr && !is_started)
+            if (source_ptr && !is_started && !source_restart_pending)
                 start();
             if (source_ptr && is_started && !is_processing)
                 autostart_appliance_pipeline();
