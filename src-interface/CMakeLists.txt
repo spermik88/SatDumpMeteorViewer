@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.12)
 
-file(GLOB_RECURSE INTERFACE_CPPS *.cpp)
+file(GLOB_RECURSE INTERFACE_CPPS CONFIGURE_DEPENDS *.cpp)
 
 add_library(satdump_interface SHARED ${INTERFACE_CPPS})
 target_include_directories(satdump_interface PUBLIC . ../src-core)
