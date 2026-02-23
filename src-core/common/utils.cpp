@@ -280,10 +280,6 @@ std::string prepareAutomatedPipelineFolder(time_t timevalue, double frequency, s
     if (folder == "")
     {
         folder = satdump::config::main_cfg["satdump_directories"]["live_processing_path"]["value"].get<std::string>();
-#ifdef __ANDROID__
-        if (folder == "./live_output")
-            folder = "/storage/emulated/0/live_output";
-#endif
     }
     std::string timestamp = std::to_string(timeReadable->tm_year + 1900) + "-" +
                             (timeReadable->tm_mon + 1 > 9 ? std::to_string(timeReadable->tm_mon + 1) : "0" + std::to_string(timeReadable->tm_mon + 1)) + "-" +

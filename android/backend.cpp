@@ -48,10 +48,17 @@ void funcSetMousePos(int, int)
 
 std::pair<int, int> funcBeginFrame()
 {
+    if (g_EglDisplay == EGL_NO_DISPLAY || g_EglSurface == EGL_NO_SURFACE || ImGui::GetCurrentContext() == nullptr)
+        return {0, 0};
+
     // Get display dimensions
-    EGLint width, height;
+    EGLint width = 0, height = 0;
     eglQuerySurface(g_EglDisplay, g_EglSurface, EGL_WIDTH, &width);
     eglQuerySurface(g_EglDisplay, g_EglSurface, EGL_HEIGHT, &height);
+
+    ImGuiIO &io = ImGui::GetIO();
+    if (io.BackendRendererUserData == nullptr || io.BackendPlatformUserData == nullptr)
+        return {(int)width, (int)height};
 
     // Start the Dear ImGui frame
     ImGui_ImplOpenGL3_NewFrame();
@@ -63,14 +70,24 @@ std::pair<int, int> funcBeginFrame()
 
 void funcEndFrame()
 {
+    if (g_EglDisplay == EGL_NO_DISPLAY || g_EglSurface == EGL_NO_SURFACE || ImGui::GetCurrentContext() == nullptr)
+        return;
+
+    ImGuiIO &io = ImGui::GetIO();
+    if (io.BackendRendererUserData == nullptr || io.BackendPlatformUserData == nullptr)
+        return;
+
     ImGui::Render();
-    ImGuiIO& io = ImGui::GetIO();
     glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
     glClearColor(style::theme.frame_bg.Value.x, style::theme.frame_bg.Value.y, style::theme.frame_bg.Value.z, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-    eglSwapBuffers(g_EglDisplay, g_EglSurface);
+    ImDrawData *draw_data = ImGui::GetDrawData();
+    if (draw_data != nullptr)
+        ImGui_ImplOpenGL3_RenderDrawData(draw_data);
+
+    if (g_EglDisplay != EGL_NO_DISPLAY && g_EglSurface != EGL_NO_SURFACE)
+        eglSwapBuffers(g_EglDisplay, g_EglSurface);
 }
 
 void funcSetIcon(uint8_t*, int, int)

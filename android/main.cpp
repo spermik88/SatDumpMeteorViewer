@@ -32,28 +32,72 @@ void init(struct android_app *app)
         return;
 
     g_App = app;
+    if (g_App == nullptr || g_App->window == nullptr)
+    {
+        __android_log_print(ANDROID_LOG_ERROR, g_LogTag, "%s", "Cannot initialize: invalid android app window");
+        return;
+    }
     ANativeWindow_acquire(g_App->window);
+
+    auto cleanup_failed_init = []()
+    {
+        if (g_EglDisplay != EGL_NO_DISPLAY)
+        {
+            eglMakeCurrent(g_EglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+            if (g_EglContext != EGL_NO_CONTEXT)
+                eglDestroyContext(g_EglDisplay, g_EglContext);
+            if (g_EglSurface != EGL_NO_SURFACE)
+                eglDestroySurface(g_EglDisplay, g_EglSurface);
+            eglTerminate(g_EglDisplay);
+        }
+        g_EglDisplay = EGL_NO_DISPLAY;
+        g_EglContext = EGL_NO_CONTEXT;
+        g_EglSurface = EGL_NO_SURFACE;
+        if (g_App != nullptr && g_App->window != nullptr)
+            ANativeWindow_release(g_App->window);
+    };
 
     // Initialize EGL
     // This is mostly boilerplate code for EGL...
     {
         g_EglDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
         if (g_EglDisplay == EGL_NO_DISPLAY)
+        {
             __android_log_print(ANDROID_LOG_ERROR, g_LogTag, "%s", "eglGetDisplay(EGL_DEFAULT_DISPLAY) returned EGL_NO_DISPLAY");
+            cleanup_failed_init();
+            return;
+        }
 
         if (eglInitialize(g_EglDisplay, 0, 0) != EGL_TRUE)
+        {
             __android_log_print(ANDROID_LOG_ERROR, g_LogTag, "%s", "eglInitialize() returned with an error");
+            cleanup_failed_init();
+            return;
+        }
 
         const EGLint egl_attributes[] = {EGL_BLUE_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_RED_SIZE, 8, EGL_DEPTH_SIZE, 24, EGL_SURFACE_TYPE, EGL_WINDOW_BIT, EGL_NONE};
         EGLint num_configs = 0;
         if (eglChooseConfig(g_EglDisplay, egl_attributes, nullptr, 0, &num_configs) != EGL_TRUE)
+        {
             __android_log_print(ANDROID_LOG_ERROR, g_LogTag, "%s", "eglChooseConfig() returned with an error");
+            cleanup_failed_init();
+            return;
+        }
         if (num_configs == 0)
+        {
             __android_log_print(ANDROID_LOG_ERROR, g_LogTag, "%s", "eglChooseConfig() returned 0 matching config");
+            cleanup_failed_init();
+            return;
+        }
 
         // Get the first matching config
         EGLConfig egl_config;
-        eglChooseConfig(g_EglDisplay, egl_attributes, &egl_config, 1, &num_configs);
+        if (eglChooseConfig(g_EglDisplay, egl_attributes, &egl_config, 1, &num_configs) != EGL_TRUE || num_configs <= 0)
+        {
+            __android_log_print(ANDROID_LOG_ERROR, g_LogTag, "%s", "eglChooseConfig() failed to get a valid config");
+            cleanup_failed_init();
+            return;
+        }
         EGLint egl_format;
         eglGetConfigAttrib(g_EglDisplay, egl_config, EGL_NATIVE_VISUAL_ID, &egl_format);
         ANativeWindow_setBuffersGeometry(g_App->window, 0, 0, egl_format);
@@ -62,27 +106,56 @@ void init(struct android_app *app)
         g_EglContext = eglCreateContext(g_EglDisplay, egl_config, EGL_NO_CONTEXT, egl_context_attributes);
 
         if (g_EglContext == EGL_NO_CONTEXT)
+        {
             __android_log_print(ANDROID_LOG_ERROR, g_LogTag, "%s", "eglCreateContext() returned EGL_NO_CONTEXT");
+            cleanup_failed_init();
+            return;
+        }
 
         g_EglSurface = eglCreateWindowSurface(g_EglDisplay, egl_config, g_App->window, NULL);
-        eglMakeCurrent(g_EglDisplay, g_EglSurface, g_EglSurface, g_EglContext);
+        if (g_EglSurface == EGL_NO_SURFACE)
+        {
+            __android_log_print(ANDROID_LOG_ERROR, g_LogTag, "%s", "eglCreateWindowSurface() returned EGL_NO_SURFACE");
+            cleanup_failed_init();
+            return;
+        }
+        if (eglMakeCurrent(g_EglDisplay, g_EglSurface, g_EglSurface, g_EglContext) != EGL_TRUE)
+        {
+            __android_log_print(ANDROID_LOG_ERROR, g_LogTag, "%s", "eglMakeCurrent() returned with an error");
+            cleanup_failed_init();
+            return;
+        }
     }
 
-    if (!was_init)
+    if (ImGui::GetCurrentContext() == nullptr)
     {
         // Setup Dear ImGui context
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
-        ImGuiIO &io = ImGui::GetIO();
+    }
+    ImGuiIO &io = ImGui::GetIO();
 
+    if (!was_init)
+    {
         // Disable loading/saving of .ini file from disk.
         // FIXME: Consider using LoadIniSettingsFromMemory() / SaveIniSettingsToMemory() to save in appropriate location for Android.
         io.IniFilename = NULL;
     }
 
     // Setup Platform/Renderer backends
-    ImGui_ImplAndroid_Init(g_App->window);
-    ImGui_ImplOpenGL3_Init("#version 300 es");
+    if (!ImGui_ImplAndroid_Init(g_App->window))
+    {
+        __android_log_print(ANDROID_LOG_ERROR, g_LogTag, "%s", "ImGui_ImplAndroid_Init() failed");
+        cleanup_failed_init();
+        return;
+    }
+    if (!ImGui_ImplOpenGL3_Init("#version 300 es"))
+    {
+        __android_log_print(ANDROID_LOG_ERROR, g_LogTag, "%s", "ImGui_ImplOpenGL3_Init() failed");
+        ImGui_ImplAndroid_Shutdown();
+        cleanup_failed_init();
+        return;
+    }
 
     if (!was_init)
     {
@@ -119,8 +192,14 @@ void init(struct android_app *app)
 
 void tick()
 {
-    ImGuiIO& io = ImGui::GetIO();
-    if (g_EglDisplay == EGL_NO_DISPLAY)
+    if (!g_Initialized || g_EglDisplay == EGL_NO_DISPLAY || g_EglSurface == EGL_NO_SURFACE || g_EglContext == EGL_NO_CONTEXT)
+        return;
+
+    if (ImGui::GetCurrentContext() == nullptr)
+        return;
+
+    ImGuiIO &io = ImGui::GetIO();
+    if (io.BackendRendererUserData == nullptr || io.BackendPlatformUserData == nullptr)
         return;
 
     // Poll Unicode characters via JNI
@@ -178,8 +257,10 @@ static void handleAppCmd(struct android_app *app, int32_t appCmd)
         init(app);
         break;
     case APP_CMD_TERM_WINDOW:
-    case APP_CMD_PAUSE:
         shutdown();
+        break;
+    case APP_CMD_PAUSE:
+        HideSoftKeyboardInput();
         break;
     case APP_CMD_SAVE_STATE:
         satdump::recorder_app->save_settings();
@@ -292,7 +373,7 @@ void android_main(struct android_app *app)
             {
                 // shutdown() should have been called already while processing the
                 // app command APP_CMD_TERM_WINDOW. But we play save here
-                if (!g_Initialized)
+                if (g_Initialized)
                     shutdown();
 
                 return;

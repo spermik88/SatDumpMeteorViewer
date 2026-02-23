@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <stdexcept>
+#include <system_error>
 
 #ifndef _MSC_VER
 #include <sys/statvfs.h>
@@ -46,27 +47,67 @@ namespace satdump
             return (std::filesystem::path(to_dir) / rel).string();
         }
 
-        bool prepare_live_output_dirs(const std::string &final_dir,
+        bool is_android_permission_error(const std::error_code &ec)
+        {
+#ifdef __ANDROID__
+            return ec == std::errc::permission_denied ||
+                   ec == std::errc::operation_not_permitted ||
+                   ec == std::errc::read_only_file_system;
+#else
+            (void)ec;
+            return false;
+#endif
+        }
+
+        bool prepare_live_output_dirs(std::string &final_dir,
                                       std::string &tmp_dir)
         {
-            tmp_dir = ops::build_temp_run_dir(final_dir);
-            std::error_code ec;
-            if (std::filesystem::exists(tmp_dir, ec))
+            auto try_prepare = [&](const std::string &target_final_dir, std::error_code &out_ec) -> bool
             {
-                std::filesystem::remove_all(tmp_dir, ec);
-                if (ec)
+                tmp_dir = ops::build_temp_run_dir(target_final_dir);
+                out_ec.clear();
+                if (std::filesystem::exists(tmp_dir, out_ec))
                 {
-                    logger->warn("Failed to clean temp directory %s: %s", tmp_dir.c_str(), ec.message().c_str());
+                    std::filesystem::remove_all(tmp_dir, out_ec);
+                    if (out_ec)
+                    {
+                        logger->warn("Failed to clean temp directory %s: %s", tmp_dir.c_str(), out_ec.message().c_str());
+                        return false;
+                    }
+                }
+                std::filesystem::create_directories(tmp_dir, out_ec);
+                if (out_ec)
                     return false;
+                return true;
+            };
+
+            std::error_code ec;
+            if (try_prepare(final_dir, ec))
+                return true;
+
+#ifdef __ANDROID__
+            if (is_android_permission_error(ec))
+            {
+                std::filesystem::path requested_path(final_dir);
+                std::string run_name = requested_path.filename().string();
+                if (run_name.empty())
+                    run_name = "run";
+
+                std::string fallback_final_dir = (std::filesystem::path("./live_output") / run_name).string();
+                if (fallback_final_dir != final_dir)
+                {
+                    logger->warn("Live output path is not writable (%s), falling back to %s",
+                                 final_dir.c_str(),
+                                 fallback_final_dir.c_str());
+                    final_dir = fallback_final_dir;
+                    if (try_prepare(final_dir, ec))
+                        return true;
                 }
             }
-            std::filesystem::create_directories(tmp_dir, ec);
-            if (ec)
-            {
-                logger->error("Failed to create temp directory %s: %s", tmp_dir.c_str(), ec.message().c_str());
-                return false;
-            }
-            return true;
+#endif
+
+            logger->error("Failed to create temp directory %s: %s", tmp_dir.c_str(), ec.message().c_str());
+            return false;
         }
 
         bool finalize_live_output_dir(const std::string &tmp_dir,
