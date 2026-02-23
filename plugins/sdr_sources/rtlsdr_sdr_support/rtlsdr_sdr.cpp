@@ -20,7 +20,7 @@ void RtlSdrSource::_rx_callback(unsigned char *buf, uint32_t len, void *ctx)
 
 void RtlSdrSource::set_gains()
 {
-    if (!is_started)
+    if (!is_started || rtlsdr_dev_obj == nullptr)
         return;
 
     int attempts;
@@ -82,7 +82,7 @@ void RtlSdrSource::set_gains()
 
 void RtlSdrSource::set_bias()
 {
-    if (!is_started)
+    if (!is_started || rtlsdr_dev_obj == nullptr)
         return;
 
     int attempts = 0;
@@ -99,7 +99,7 @@ void RtlSdrSource::set_bias()
 void RtlSdrSource::set_ppm()
 {
     int ppm = ppm_widget.get();
-    if (!is_started || ppm == last_ppm)
+    if (!is_started || rtlsdr_dev_obj == nullptr || ppm == last_ppm)
         return;
 
     last_ppm = ppm;
@@ -176,59 +176,86 @@ void RtlSdrSource::start()
 {
     DSPSampleSource::start();
 
+    rtlsdr_dev_obj = nullptr;
     int index = rtlsdr_get_index_by_serial(d_sdr_id.c_str());
-    if (index != -1 && rtlsdr_open(&rtlsdr_dev_obj, index) != 0)
+    if (index == -1 || rtlsdr_open(&rtlsdr_dev_obj, index) != 0 || rtlsdr_dev_obj == nullptr)
         throw satdump_exception("Could not open RTL-SDR device!");
 
-    // Set available gains
-    int gains[256];
-    int num_gains = rtlsdr_get_tuner_gains(rtlsdr_dev_obj, gains);
-    if (num_gains > 0)
+    try
     {
-        available_gains.clear();
-        for (int i = 0; i < num_gains; i++)
-            available_gains.push_back(gains[i]);
-        std::sort(available_gains.begin(), available_gains.end());
+        // Set available gains
+        int gains[256];
+        if (rtlsdr_dev_obj == nullptr)
+            throw satdump_exception("RTL-SDR device is not initialized!");
+        int num_gains = rtlsdr_get_tuner_gains(rtlsdr_dev_obj, gains);
+        if (num_gains > 0)
+        {
+            available_gains.clear();
+            for (int i = 0; i < num_gains; i++)
+                available_gains.push_back(gains[i]);
+            std::sort(available_gains.begin(), available_gains.end());
+        }
+
+        uint64_t current_samplerate = samplerate_widget.get_value();
+
+        logger->debug("Set RTL-SDR samplerate to " + std::to_string(current_samplerate));
+        rtlsdr_set_sample_rate(rtlsdr_dev_obj, current_samplerate);
+
+        is_started = true;
+        changed_agc = true;
+        set_status(SourceStatus::Online);
+
+        set_frequency(d_frequency);
+
+        set_bias();
+        set_gains();
+        set_ppm();
+
+        if (rtlsdr_dev_obj == nullptr)
+            throw satdump_exception("RTL-SDR device unexpectedly became null!");
+        rtlsdr_reset_buffer(rtlsdr_dev_obj);
+        display_gain = (float)gain / 10.0f;
+        auto now = std::chrono::steady_clock::now().time_since_epoch();
+        last_rx_timestamp_ms.store(std::chrono::duration_cast<std::chrono::milliseconds>(now).count());
+        thread_should_run = true;
+        work_thread = std::thread(&RtlSdrSource::mainThread, this);
     }
-
-    uint64_t current_samplerate = samplerate_widget.get_value();
-
-    logger->debug("Set RTL-SDR samplerate to " + std::to_string(current_samplerate));
-    rtlsdr_set_sample_rate(rtlsdr_dev_obj, current_samplerate);
-
-    is_started = true;
-    changed_agc = true;
-    set_status(SourceStatus::Online);
-
-    set_frequency(d_frequency);
-
-    set_bias();
-    set_gains();
-    set_ppm();
-
-    rtlsdr_reset_buffer(rtlsdr_dev_obj);
-    display_gain = (float)gain / 10.0f;
-    auto now = std::chrono::steady_clock::now().time_since_epoch();
-    last_rx_timestamp_ms.store(std::chrono::duration_cast<std::chrono::milliseconds>(now).count());
-    thread_should_run = true;
-    work_thread = std::thread(&RtlSdrSource::mainThread, this);
+    catch (...)
+    {
+        is_started = false;
+        if (rtlsdr_dev_obj != nullptr)
+        {
+            rtlsdr_close(rtlsdr_dev_obj);
+            rtlsdr_dev_obj = nullptr;
+        }
+        throw;
+    }
 }
 
 void RtlSdrSource::stop()
 {
     if (is_started)
     {
-        rtlsdr_cancel_async(rtlsdr_dev_obj);
         thread_should_run = false;
+        if (rtlsdr_dev_obj != nullptr)
+            rtlsdr_cancel_async(rtlsdr_dev_obj);
         logger->info("Waiting for the thread...");
-        if (is_started)
+        if (output_stream)
             output_stream->stopWriter();
         if (work_thread.joinable())
             work_thread.join();
         logger->info("Thread stopped");
-        rtlsdr_set_bias_tee(rtlsdr_dev_obj, false);
+        if (rtlsdr_dev_obj != nullptr)
+        {
+            rtlsdr_set_bias_tee(rtlsdr_dev_obj, false);
+            rtlsdr_close(rtlsdr_dev_obj);
+        }
+    }
+    else if (rtlsdr_dev_obj != nullptr)
+    {
         rtlsdr_close(rtlsdr_dev_obj);
     }
+    rtlsdr_dev_obj = nullptr;
     is_started = false;
     set_status(SourceStatus::Offline);
 }
@@ -240,7 +267,7 @@ void RtlSdrSource::close()
 
 void RtlSdrSource::set_frequency(uint64_t frequency)
 {
-    if (is_started)
+    if (is_started && rtlsdr_dev_obj != nullptr)
     {
         int attempts = 0;
         while (attempts < 20 && rtlsdr_set_center_freq(rtlsdr_dev_obj, frequency) < 0)

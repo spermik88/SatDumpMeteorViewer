@@ -87,6 +87,51 @@ namespace satdump
             }
             return true;
         }
+
+        bool same_source_descriptor(const dsp::SourceDescriptor &a,
+                                    const dsp::SourceDescriptor &b)
+        {
+            if (a.source_type != b.source_type)
+                return false;
+
+            if (!a.unique_id.empty() || !b.unique_id.empty())
+                return a.unique_id == b.unique_id;
+
+            return a.name == b.name;
+        }
+
+        int find_source_index(const std::vector<dsp::SourceDescriptor> &list,
+                              const dsp::SourceDescriptor &target)
+        {
+            for (int i = 0; i < (int)list.size(); i++)
+            {
+                if (same_source_descriptor(list[i], target))
+                    return i;
+            }
+            return -1;
+        }
+
+        bool same_source_lists(const std::vector<dsp::SourceDescriptor> &a,
+                               const std::vector<dsp::SourceDescriptor> &b)
+        {
+            if (a.size() != b.size())
+                return false;
+
+            for (const auto &src : a)
+            {
+                if (find_source_index(b, src) < 0)
+                    return false;
+            }
+            return true;
+        }
+
+        std::string make_source_select_string(const std::vector<dsp::SourceDescriptor> &sources)
+        {
+            std::string out;
+            for (const auto &src : sources)
+                out += src.name + '\0';
+            return out;
+        }
     }
 
     nlohmann::json RecorderApplication::serialize_config()
@@ -361,6 +406,9 @@ namespace satdump
 
     void RecorderApplication::handle_source_restart()
     {
+        const int restart_reset_backoff = appliance_mode ? 1 : 3;
+        const int restart_max_backoff = appliance_mode ? 5 : 60;
+
         if (!source_ptr)
         {
             if (appliance_mode)
@@ -385,12 +433,12 @@ namespace satdump
             if (is_processing)
                 set_rx_status(ops::get_state().first_valid_frame ? "receiving" : "waiting");
             else
-                set_rx_status("idle");
+                set_rx_status(appliance_mode ? "waiting" : "idle");
 
             set_sdr_status("online");
             source_restart_pending = false;
             pipeline_restart_pending = false;
-            source_restart_backoff_seconds = 3;
+            source_restart_backoff_seconds = restart_reset_backoff;
             return;
         }
 
@@ -437,7 +485,7 @@ namespace satdump
             if (source_ptr->get_status() == dsp::DSPSampleSource::SourceStatus::Online)
             {
                 source_restart_pending = false;
-                source_restart_backoff_seconds = 3;
+                source_restart_backoff_seconds = restart_reset_backoff;
                 set_sdr_status("online");
                 if (pipeline_restart_pending)
                 {
@@ -455,7 +503,7 @@ namespace satdump
             set_sdr_status("error");
         }
 
-        source_restart_backoff_seconds = std::min(source_restart_backoff_seconds * 2, 60);
+        source_restart_backoff_seconds = std::min(source_restart_backoff_seconds * 2, restart_max_backoff);
         source_restart_time = now + std::chrono::seconds(source_restart_backoff_seconds);
         set_sdr_status("offline");
     }
@@ -595,16 +643,30 @@ namespace satdump
         {
             std::vector<dsp::SourceDescriptor> fresh_sources = dsp::getAllAvailableSources();
             std::vector<dsp::SourceDescriptor> rtl_sources;
+            rtl_sources.reserve(fresh_sources.size());
             for (const auto &src : fresh_sources)
             {
                 if (is_rtl_source_descriptor(src))
                     rtl_sources.push_back(src);
             }
             sources = rtl_sources;
+            sdr_select_string = make_source_select_string(sources);
         }
 
-        for (int i = 0; i < (int)sources.size(); i++)
+        if (sources.empty())
         {
+            sdr_select_id = -1;
+            set_sdr_status("offline");
+            return false;
+        }
+
+        int start_index = 0;
+        if (sdr_select_id >= 0 && sdr_select_id < (int)sources.size())
+            start_index = sdr_select_id;
+
+        for (int offset = 0; offset < (int)sources.size(); offset++)
+        {
+            int i = (start_index + offset) % (int)sources.size();
             try
             {
                 source_ptr = dsp::getSourceFromDescriptor(sources[i]);
@@ -612,15 +674,18 @@ namespace satdump
                 sdr_select_id = i;
                 set_sdr_status("online");
                 source_restart_pending = false;
-                source_restart_backoff_seconds = 3;
+                source_restart_backoff_seconds = appliance_mode ? 1 : 3;
+                source_unhealthy_since = std::chrono::steady_clock::time_point::min();
                 return true;
             }
             catch (std::runtime_error &e)
             {
                 logger->error(e.what());
+                source_ptr.reset();
             }
         }
 
+        sdr_select_id = -1;
         set_sdr_status("offline");
         return false;
     }
@@ -646,25 +711,110 @@ namespace satdump
 
     void RecorderApplication::tick_background()
     {
-        if (appliance_mode && !source_ptr)
+        if (appliance_mode)
         {
             auto now = std::chrono::steady_clock::now();
-            if (source_restart_pending && now < source_restart_time)
-                return;
 
-            if (!select_rtl_source_or_fail())
+            auto reset_appliance_source = [this]()
             {
+                if (is_processing)
+                    stop_processing();
+                if (is_started)
+                    stop();
+                if (source_ptr)
+                    source_ptr->close();
+
+                source_ptr.reset();
+                source_restart_pending = false;
+                pipeline_restart_pending = false;
+                source_restart_backoff_seconds = 1;
+                source_unhealthy_since = std::chrono::steady_clock::time_point::min();
+                set_sdr_status("offline");
                 set_rx_status("waiting");
-                source_restart_pending = true;
-                source_restart_time = now + std::chrono::seconds(source_restart_backoff_seconds);
-                source_restart_backoff_seconds = std::min(source_restart_backoff_seconds * 2, 60);
-                return;
+            };
+
+            if (now >= next_rtl_rescan_time)
+            {
+                next_rtl_rescan_time = now + std::chrono::seconds(appliance_rescan_interval_seconds);
+
+                std::vector<dsp::SourceDescriptor> fresh_sources = dsp::getAllAvailableSources();
+                std::vector<dsp::SourceDescriptor> rtl_sources;
+                rtl_sources.reserve(fresh_sources.size());
+                for (const auto &src : fresh_sources)
+                {
+                    if (is_rtl_source_descriptor(src))
+                        rtl_sources.push_back(src);
+                }
+
+                dsp::SourceDescriptor selected_before_rescan;
+                bool had_selected = sdr_select_id >= 0 && sdr_select_id < (int)sources.size();
+                if (had_selected)
+                    selected_before_rescan = sources[sdr_select_id];
+
+                bool list_changed = !same_source_lists(sources, rtl_sources);
+                if (list_changed)
+                {
+                    sources = rtl_sources;
+                    sdr_select_string = make_source_select_string(sources);
+                    if (had_selected)
+                        sdr_select_id = find_source_index(sources, selected_before_rescan);
+                    else if (sources.empty())
+                        sdr_select_id = -1;
+                    else if (sdr_select_id >= (int)sources.size())
+                        sdr_select_id = 0;
+
+                    if (source_ptr && (sdr_select_id < 0 || sdr_select_id >= (int)sources.size()))
+                    {
+                        logger->warn("Current RTL source is no longer present, forcing reselect.");
+                        reset_appliance_source();
+                    }
+                }
             }
+
+            if (source_ptr)
+            {
+                auto status = source_ptr->get_status();
+                bool unhealthy = status == dsp::DSPSampleSource::SourceStatus::Offline ||
+                                 status == dsp::DSPSampleSource::SourceStatus::Error;
+                if (unhealthy)
+                {
+                    if (source_unhealthy_since == std::chrono::steady_clock::time_point::min())
+                        source_unhealthy_since = now;
+
+                    auto unhealthy_for = std::chrono::duration_cast<std::chrono::seconds>(now - source_unhealthy_since).count();
+                    if (unhealthy_for >= appliance_unhealthy_timeout_seconds)
+                    {
+                        logger->warn("RTL source stayed offline/error for %lld seconds, forcing reselect.", (long long)unhealthy_for);
+                        reset_appliance_source();
+                    }
+                }
+                else
+                {
+                    source_unhealthy_since = std::chrono::steady_clock::time_point::min();
+                }
+            }
+
+            if (!source_ptr)
+            {
+                if (source_restart_pending && now < source_restart_time)
+                    return;
+
+                if (!select_rtl_source_or_fail())
+                {
+                    set_rx_status("waiting");
+                    source_restart_pending = true;
+                    source_restart_time = now + std::chrono::seconds(source_restart_backoff_seconds);
+                    source_restart_backoff_seconds = std::min(source_restart_backoff_seconds * 2, 5);
+                    return;
+                }
+            }
+
+            if (source_ptr && !is_started)
+                start();
+            if (source_ptr && is_started && !is_processing)
+                autostart_appliance_pipeline();
         }
-        if (appliance_mode && source_ptr && !is_started)
-            start();
-        if (appliance_mode && is_started && !is_processing)
-            autostart_appliance_pipeline();
+
         maybe_emit_first_valid_frame();
 
         handle_source_restart();

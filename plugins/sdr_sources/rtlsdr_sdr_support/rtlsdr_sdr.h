@@ -18,7 +18,7 @@ class RtlSdrSource : public dsp::DSPSampleSource
 {
 protected:
     bool is_open = false, is_started = false;
-    rtlsdr_dev *rtlsdr_dev_obj;
+    rtlsdr_dev *rtlsdr_dev_obj = nullptr;
     static void _rx_callback(unsigned char *buf, uint32_t len, void *ctx);
 
     widgets::DoubleList samplerate_widget;

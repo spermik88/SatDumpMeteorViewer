@@ -27,6 +27,8 @@ namespace satdump
 #ifdef __ANDROID__
         appliance_mode = true;
 #endif
+        if (appliance_mode)
+            source_restart_backoff_seconds = 1;
         automated_live_output_dir = config::main_cfg["satdump_directories"]["live_processing_autogen"]["value"].get<bool>();
         if (appliance_mode)
             automated_live_output_dir = true;

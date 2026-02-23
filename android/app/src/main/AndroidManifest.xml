@@ -17,20 +17,26 @@
             android:exported="true">
             <meta-data android:name="android.app.lib_name"
                 android:value="android_imgui" />
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/device_filter" />
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
     </application>
 
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.hardware.usb.host" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
     <uses-permission android:name="android.permission.USB_PERMISSION" />
-    <meta-data android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
-        android:resource="@xml/device_filter" />
     <uses-permission android:name="libusb.android.USB_PERMISSION" />
 </manifest>

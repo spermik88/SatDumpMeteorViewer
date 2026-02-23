@@ -3,20 +3,20 @@ package com.altillimity.satdump
 import android.app.NativeActivity
 import android.os.Bundle
 import android.os.Build
+import android.os.SystemClock
 import android.content.Context
 import android.view.inputmethod.InputMethodManager
-import android.view.KeyEvent
 import java.util.concurrent.LinkedBlockingQueue
 import android.util.Log
 import android.content.res.AssetManager
 import java.io.*
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.zip.CRC32
 
 import android.Manifest
-import android.content.BroadcastReceiver
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.text.Editable
@@ -45,57 +45,45 @@ fun Intent?.getFilePathDir(context: Context): String {
 class MainActivity : NativeActivity(), TextWatcher {
     private val TAG : String = "SatDump";
     private val FORCED_ORIENTATION: Int = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    private val PERMISSION_REQUEST_CODE = 1
+    private val ASSET_SYNC_PREFS = "satdump_asset_sync"
+    private val ASSET_SYNC_KEY = "asset_sync_version"
 
-    fun checkAndAsk(permission: String) {
-        if (PermissionChecker.checkSelfPermission(this, permission) != PermissionChecker.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(permission), 1);
-        }
-    }
-
-    // // Adapted from Ryzerth's implementation, a lot cleaner than my old Java crap!
-    private var ACTION_USB_PERMISSION = "libusb.android.USB_PERMISSION";
-    private var isUsbReceiverRegistered = false
-
-    private var usbReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            if (ACTION_USB_PERMISSION == intent.action) {
-                synchronized(this) {
-                    var _this = context as MainActivity;
-                    Log.w(TAG, "Got Intent Reply USB!!!! Reset Activity (libusb bug?)");
-                    _this.recreate();
-                }
-            }
-        }
-    }
+    data class AssetSyncStats(
+        var filesChecked: Int = 0,
+        var filesCopied: Int = 0
+    )
 
     public var mLayout : ViewGroup? = null;
     public var editText : EditText? = null;
     public var lastFiller : String? = null;
 
+    private fun requestMissingPermissionsIfNeeded() {
+        val requiredPermissions = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            requiredPermissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            requiredPermissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+
+        val missingPermissions = requiredPermissions.filter {
+            PermissionChecker.checkSelfPermission(this, it) != PermissionChecker.PERMISSION_GRANTED
+        }
+
+        if (missingPermissions.isNotEmpty()) {
+            ActivityCompat.requestPermissions(
+                this,
+                missingPermissions.toTypedArray(),
+                PERMISSION_REQUEST_CODE
+            )
+        }
+    }
+
     public override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestedOrientation = FORCED_ORIENTATION
 
-        // Ask for required permissions, without these the app cannot run.
-        checkAndAsk(Manifest.permission.WRITE_EXTERNAL_STORAGE);
-        checkAndAsk(Manifest.permission.READ_EXTERNAL_STORAGE);
-
-        // Register events
-        //        usbManager = getSystemService(Context.USB_SERVICE) as UsbManager;
-        //        val permissionIntent = PendingIntent.getBroadcast(this, 0, Intent(ACTION_USB_PERMISSION), 0)
-        val filter = IntentFilter(ACTION_USB_PERMISSION)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(usbReceiver, filter, RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(usbReceiver, filter)
-        }
-        isUsbReceiverRegistered = true
-
-        // Get permission for all USB devices
-        // val devList = usbManager!!.getDeviceList();
-        // for ((name, dev) in devList) {
-        //     usbManager!!.requestPermission(dev, permissionIntent);
-        // }
+        // Ask only once for missing permissions.
+        requestMissingPermissionsIfNeeded()
 
         // Hide system bars
         val insetsController = WindowInsetsControllerCompat(window, window.decorView)
@@ -129,25 +117,138 @@ class MainActivity : NativeActivity(), TextWatcher {
     }
 
     override fun onDestroy() {
-        if (isUsbReceiverRegistered) {
-            unregisterReceiver(usbReceiver)
-            isUsbReceiverRegistered = false
-        }
         super.onDestroy()
     }
 
+    private fun getSelfPackageInfo(): PackageInfo {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, 0)
+        }
+    }
+
+    private fun getAssetsSyncVersion(): String {
+        val pkg = getSelfPackageInfo()
+        val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            pkg.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            pkg.versionCode.toLong()
+        }
+        return "$versionCode:${pkg.lastUpdateTime}"
+    }
+
+    private fun hasAssetSentinels(fdir: String): Boolean {
+        return File("$fdir/resources").isDirectory &&
+            File("$fdir/pipelines").isDirectory &&
+            File("$fdir/satdump_cfg.json").isFile
+    }
+
+    private fun crc32OfStream(input: InputStream): Long {
+        val crc = CRC32()
+        val buffer = ByteArray(32 * 1024)
+        input.use { stream ->
+            while (true) {
+                val read = stream.read(buffer)
+                if (read <= 0) {
+                    break
+                }
+                crc.update(buffer, 0, read)
+            }
+        }
+        return crc.value
+    }
+
+    private fun getAssetLength(aman: AssetManager, rsrc: String): Long {
+        return try {
+            aman.openFd(rsrc).length
+        } catch (_: IOException) {
+            -1L
+        }
+    }
+
+    private fun shouldCopyAsset(aman: AssetManager, local: File, rsrc: String): Boolean {
+        if (!local.exists()) {
+            return true
+        }
+
+        val assetLength = getAssetLength(aman, rsrc)
+        if (assetLength >= 0 && local.length() != assetLength) {
+            return true
+        }
+
+        if (assetLength < 0) {
+            val assetCrc = crc32OfStream(aman.open(rsrc))
+            val localCrc = FileInputStream(local).use { crc32OfStream(it) }
+            if (assetCrc != localCrc) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private fun copyAssetFile(aman: AssetManager, local: File, rsrc: String) {
+        local.parentFile?.let { createIfDoesntExist(it.absolutePath) }
+        aman.open(rsrc).use { input ->
+            FileOutputStream(local).use { output ->
+                val buffer = ByteArray(32 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read <= 0) {
+                        break
+                    }
+                    output.write(buffer, 0, read)
+                }
+                output.flush()
+            }
+        }
+    }
+
+    private fun syncAssetEntry(aman: AssetManager, local: String, rsrc: String, stats: AssetSyncStats) {
+        val children = aman.list(rsrc) ?: emptyArray()
+        if (children.isNotEmpty()) {
+            createIfDoesntExist(local)
+            for (child in children) {
+                syncAssetEntry(aman, "$local/$child", "$rsrc/$child", stats)
+            }
+            return
+        }
+
+        val localFile = File(local)
+        stats.filesChecked += 1
+        if (shouldCopyAsset(aman, localFile, rsrc)) {
+            copyAssetFile(aman, localFile, rsrc)
+            stats.filesCopied += 1
+        }
+    }
 
     public fun getAppDir(): String {
-        val fdir = getFilesDir().getAbsolutePath();
+        val fdir = filesDir.absolutePath
+        val aman = assets
+        val startMs = SystemClock.elapsedRealtime()
+        val stats = AssetSyncStats()
+        val syncVersion = getAssetsSyncVersion()
+        val prefs = getSharedPreferences(ASSET_SYNC_PREFS, Context.MODE_PRIVATE)
+        val lastSyncedVersion = prefs.getString(ASSET_SYNC_KEY, null)
+        val canSkip = lastSyncedVersion == syncVersion && hasAssetSentinels(fdir)
 
-        // Extract all resources to the app directory
-        val aman = getAssets();
-        extractDir(aman, fdir + "/resources", "resources");
-        extractDir(aman, fdir + "/pipelines", "pipelines");
-        extractFile(aman, fdir + "/satdump_cfg.json", "satdump_cfg.json");
-        //createIfDoesntExist(fdir + "/plugins");
+        if (!canSkip) {
+            extractDir(aman, "$fdir/resources", "resources", stats)
+            extractDir(aman, "$fdir/pipelines", "pipelines", stats)
+            extractFile(aman, "$fdir/satdump_cfg.json", "satdump_cfg.json", stats)
+            prefs.edit().putString(ASSET_SYNC_KEY, syncVersion).apply()
+        }
 
-        return fdir;
+        val elapsed = SystemClock.elapsedRealtime() - startMs
+        Log.i(
+            TAG,
+            "Asset sync summary: skipped=$canSkip checked=${stats.filesChecked} copied=${stats.filesCopied} durationMs=$elapsed"
+        )
+
+        return fdir
     }
 
     public fun get_plugins_directory() : String {
@@ -206,55 +307,22 @@ class MainActivity : NativeActivity(), TextWatcher {
     }
 
     public fun extractFile(aman: AssetManager, local: String, rsrc: String): Int {
-        val lpath = local;
-        val rpath = rsrc;
+        return extractFile(aman, local, rsrc, AssetSyncStats())
+    }
 
-        Log.w(TAG, "Extracting '" + rpath + "' to '" + lpath + "'");
-
-        // This is a file, extract it
-        val _os = FileOutputStream(lpath);
-        val _is = aman.open(rpath);
-        val ilen = _is.available();
-        var fbuf = ByteArray(ilen);
-        _is.read(fbuf, 0, ilen);
-        _os.write(fbuf);
-        _os.close();
-        _is.close();
-
-        return 0;
+    private fun extractFile(aman: AssetManager, local: String, rsrc: String, stats: AssetSyncStats): Int {
+        syncAssetEntry(aman, local, rsrc, stats)
+        return 0
     }
 
     public fun extractDir(aman: AssetManager, local: String, rsrc: String): Int {
-        val flist = aman.list(rsrc);
-        var ecount = 0;
-        for (fp in flist!!) {
-            val lpath = local + "/" + fp;
-            val rpath = rsrc + "/" + fp;
+        return extractDir(aman, local, rsrc, AssetSyncStats())
+    }
 
-            Log.w(TAG, "Extracting '" + rpath + "' to '" + lpath + "'");
-
-            // Create local path if non-existent
-            createIfDoesntExist(local);
-            
-            // Create if directory
-            val ext = extractDir(aman, lpath, rpath);
-
-            // Extract if file
-            if (ext == 0) {
-                // This is a file, extract it
-                val _os = FileOutputStream(lpath);
-                val _is = aman.open(rpath);
-                val ilen = _is.available();
-                var fbuf = ByteArray(ilen);
-                _is.read(fbuf, 0, ilen);
-                _os.write(fbuf);
-                _os.close();
-                _is.close();
-            }
-
-            ecount++;
-        }
-        return ecount;
+    private fun extractDir(aman: AssetManager, local: String, rsrc: String, stats: AssetSyncStats): Int {
+        val checkedBefore = stats.filesChecked
+        syncAssetEntry(aman, local, rsrc, stats)
+        return stats.filesChecked - checkedBefore
     }
 
     public fun createIfDoesntExist(path: String) {
