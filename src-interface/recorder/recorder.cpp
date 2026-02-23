@@ -16,6 +16,7 @@
 #include "processing.h"
 
 #include "resources.h"
+#include "archive_path.h"
 #include <algorithm>
 #include <cctype>
 
@@ -28,10 +29,14 @@ namespace satdump
         appliance_mode = true;
 #endif
         if (appliance_mode)
-            source_restart_backoff_seconds = 1;
+            source_restart_backoff_seconds = 3;
         automated_live_output_dir = config::main_cfg["satdump_directories"]["live_processing_autogen"]["value"].get<bool>();
         if (appliance_mode)
+        {
+            ensure_archive_base_path();
+            config::main_cfg["satdump_directories"]["live_processing_path"]["value"] = get_archive_base_path().string();
             automated_live_output_dir = true;
+        }
         processing_modules_floating_windows = config::main_cfg["user_interface"]["recorder_floating_windows"]["value"].get<bool>();
         remaining_disk_space_time = config::main_cfg["user_interface"]["remaining_disk_space_time"]["value"].get<int>();
 

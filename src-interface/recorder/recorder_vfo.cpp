@@ -6,6 +6,7 @@
 #include "common/utils.h"
 #include "common/ops_state.h"
 #include "core/plugin.h"
+#include "archive_path.h"
 
 #include <filesystem>
 #include <stdexcept>
@@ -51,7 +52,7 @@ namespace satdump
                 if (run_name.empty())
                     run_name = "run";
 
-                std::string fallback_final_dir = (std::filesystem::path("./live_output") / run_name).string();
+                std::string fallback_final_dir = (get_archive_base_path() / run_name).string();
                 if (fallback_final_dir != final_dir)
                 {
                     logger->warn("Live output path is not writable (%s), falling back to %s",
@@ -121,7 +122,11 @@ namespace satdump
             vpipeline_params["buffer_size"] = dsp::STREAM_BUFFER_SIZE; // This is required, as we WILL go over the (usually) default 8192 size
             vpipeline_params["start_timestamp"] = (double)time(0);     // Some pipelines need this
 
-            std::string output_dir = prepareAutomatedPipelineFolder(time(0), freq, vpipeline.name, "", false);
+            std::string output_dir = prepareAutomatedPipelineFolder(time(0),
+                                                                    freq,
+                                                                    vpipeline.name,
+                                                                    appliance_mode ? get_archive_base_path().string() : "",
+                                                                    false);
             std::string output_dir_tmp;
             if (!prepare_live_output_dirs(output_dir, output_dir_tmp))
                 throw std::runtime_error("Failed to prepare live output directory");

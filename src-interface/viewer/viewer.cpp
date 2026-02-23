@@ -10,6 +10,7 @@
 #include "common/image/image_utils.h"
 #include "common/image/io.h"
 #include "common/ops_state.h"
+#include "archive_path.h"
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -19,17 +20,6 @@ void SelectableColor(ImU32 color) // Colors a cell in the table with the specifi
     ImVec2 p_min = ImGui::GetItemRectMin();
     ImVec2 p_max = ImGui::GetItemRectMax();
     ImGui::GetWindowDrawList()->AddRectFilled(p_min, p_max, color);
-}
-
-namespace
-{
-    std::filesystem::path archive_base_path()
-    {
-        std::filesystem::path preferred = std::filesystem::path("files") / "images";
-        if (std::filesystem::exists(preferred))
-            return preferred;
-        return std::filesystem::path("images");
-    }
 }
 
 namespace satdump
@@ -109,8 +99,115 @@ namespace satdump
         config::main_cfg["user"]["viewer_state"]["projections"] = serialize_projections_config();
     }
 
+    void ViewerApplication::clearArchiveRunImages()
+    {
+        archive_run_loaded = false;
+        archive_preview_available = false;
+        archive_preview.clear();
+        archive_loaded_run_id.clear();
+        archive_layers_available.fill(false);
+        for (auto &layer : archive_layers)
+            layer.clear();
+    }
+
+    bool ViewerApplication::loadArchiveImagesFromRun(const std::filesystem::path &run_path, const std::string &run_id)
+    {
+        clearArchiveRunImages();
+
+        std::filesystem::path meta_path = run_path / "meta.json";
+        if (!std::filesystem::exists(meta_path))
+            return false;
+
+        nlohmann::ordered_json meta;
+        try
+        {
+            meta = loadJsonFile(meta_path.string());
+        }
+        catch (const std::exception &)
+        {
+            return false;
+        }
+
+        std::string preview_name = "preview.png";
+        if (meta.contains("preview") && meta["preview"].is_string())
+            preview_name = meta["preview"].get<std::string>();
+
+        image::Image preview_image;
+        std::filesystem::path preview_path = run_path / preview_name;
+        if (std::filesystem::exists(preview_path))
+        {
+            image::load_img(preview_image, preview_path.string());
+            if (preview_image.width() > 0 && preview_image.height() > 0)
+            {
+                archive_preview = preview_image;
+                archive_preview_available = true;
+            }
+        }
+
+        std::vector<std::string> layer_names;
+        if (meta.contains("layers") && meta["layers"].is_array())
+        {
+            for (const auto &entry : meta["layers"])
+            {
+                if (!entry.is_string())
+                    continue;
+                layer_names.push_back(entry.get<std::string>());
+            }
+        }
+
+        for (size_t i = 0; i < kLayerCount; ++i)
+        {
+            std::filesystem::path layer_path;
+            if (i < layer_names.size())
+                layer_path = run_path / layer_names[i];
+            else
+                layer_path = run_path / ("layer" + std::to_string(i + 1) + ".png");
+
+            if (!std::filesystem::exists(layer_path))
+                continue;
+
+            image::Image layer_image;
+            image::load_img(layer_image, layer_path.string());
+            if (layer_image.width() == 0 || layer_image.height() == 0)
+                continue;
+
+            archive_layers[i] = layer_image;
+            archive_layers_available[i] = true;
+        }
+
+        if (!archive_preview_available)
+        {
+            for (size_t i = 0; i < kLayerCount; ++i)
+            {
+                if (!archive_layers_available[i])
+                    continue;
+                archive_preview = archive_layers[i];
+                archive_preview_available = true;
+                break;
+            }
+        }
+
+        bool has_any_layer = std::any_of(archive_layers_available.begin(), archive_layers_available.end(), [](bool v)
+                                         { return v; });
+        if (!archive_preview_available && !has_any_layer)
+            return false;
+
+        archive_run_loaded = true;
+        archive_loaded_run_id = run_id.empty() ? run_path.filename().string() : run_id;
+        return true;
+    }
+
     void ViewerApplication::loadDatasetInViewer(std::string path)
     {
+        clearArchiveRunImages();
+        if (is_appliance_mode())
+        {
+            std::lock_guard<std::mutex> lock(product_handler_mutex);
+            products_and_handlers.clear();
+            opened_datasets.clear();
+            current_handler_id = 0;
+        }
+
         ProductDataSet dataset;
         dataset.load(path);
 
@@ -155,6 +252,33 @@ namespace satdump
                 logger->error("Не удалось открыть %s в просмотрщике: %s", pro_path.c_str(), e.what());
             }
         }
+    }
+
+    bool ViewerApplication::loadArchiveRun(const std::string &run_dir, const std::string &run_id)
+    {
+        std::filesystem::path run_path(run_dir);
+        if (!std::filesystem::exists(run_path))
+            return false;
+
+        if (loadArchiveImagesFromRun(run_path, run_id))
+        {
+            std::lock_guard<std::mutex> lock(product_handler_mutex);
+            products_and_handlers.clear();
+            opened_datasets.clear();
+            current_handler_id = 0;
+            selected_run_id = archive_loaded_run_id;
+            markLayerCompositeDirty();
+            return true;
+        }
+
+        std::filesystem::path dataset_path = run_path / "dataset.json";
+        if (!std::filesystem::exists(dataset_path))
+            return false;
+
+        loadDatasetInViewer(dataset_path.string());
+        if (!run_id.empty())
+            selected_run_id = run_id;
+        return true;
     }
 
     void ViewerApplication::loadProductsInViewer(std::string path, std::string dataset_name)
@@ -428,6 +552,84 @@ namespace satdump
             preview_enabled = false;
     }
 
+    void ViewerApplication::updateLayerModelFromArchive()
+    {
+        LayerSet new_layer_set{};
+        uint64_t new_preview_revision = 0;
+        std::string run_id = selected_run_id;
+        if (ops::is_temp_run_dir(run_id))
+            run_id.clear();
+        bool run_changed = run_id != layer_run_id;
+        if (run_changed)
+        {
+            layer_run_id = run_id;
+            layer_run_epoch++;
+            if (layer_run_epoch == 0)
+                layer_run_epoch = 1;
+        }
+
+        for (size_t i = 0; i < kLayerCount; ++i)
+        {
+            if (!archive_layers_available[i] || archive_layers[i].width() == 0 || archive_layers[i].height() == 0)
+                continue;
+            new_layer_set.layers[i] = &archive_layers[i];
+            new_layer_set.available[i] = true;
+        }
+
+        if (archive_preview_available && archive_preview.width() > 0 && archive_preview.height() > 0)
+        {
+            new_layer_set.preview = &archive_preview;
+            new_layer_set.preview_available = true;
+            new_preview_revision = 1;
+        }
+
+        bool availability_changed = new_layer_set.available != layer_set.available ||
+                                    new_layer_set.preview_available != layer_set.preview_available;
+        bool preview_ptr_changed = new_layer_set.preview != layer_set.preview;
+        bool layers_ptr_changed = new_layer_set.layers != layer_set.layers;
+
+        for (size_t i = 0; i < kLayerCount; ++i)
+        {
+            if (!new_layer_set.available[i] || !new_layer_set.layers[i])
+            {
+                layer_revisions[i] = 0;
+                continue;
+            }
+            if (run_changed || new_layer_set.layers[i] != layer_set.layers[i] || layer_revisions[i] == 0)
+                layer_revisions[i] = layer_run_epoch;
+        }
+
+        if (new_layer_set.preview_available && new_layer_set.preview)
+        {
+            uint64_t preview_revision_value = std::max<uint64_t>(new_preview_revision, 1);
+            preview_revision = (layer_run_epoch << 32) | (preview_revision_value & 0xFFFFFFFFull);
+        }
+        else
+        {
+            preview_revision = 0;
+        }
+
+        layer_set = new_layer_set;
+        layer_products_source = nullptr;
+
+        if (run_changed)
+            refreshStackComposite();
+
+        if (availability_changed || preview_ptr_changed || layers_ptr_changed || run_changed)
+        {
+            if (!layer_set.preview_available)
+                preview_enabled = false;
+            updateLayerSelectionsForMode();
+            markLayerCompositeDirty();
+        }
+
+        if (run_changed && layer_mode == LayerMode::Stack && stack_composite_available)
+            resetStackDefaults();
+
+        if (!layer_set.preview_available && preview_enabled)
+            preview_enabled = false;
+    }
+
     int ViewerApplication::resolveSingleLayerSelection() const
     {
         for (size_t i = 0; i < kLayerCount; ++i)
@@ -467,7 +669,7 @@ namespace satdump
         if (layer_run_id.empty())
             return;
 
-        std::filesystem::path composite_path = archive_base_path() / layer_run_id / "composite.png";
+        std::filesystem::path composite_path = get_archive_base_path() / layer_run_id / "composite.png";
         if (!std::filesystem::exists(composite_path))
             return;
 
@@ -832,6 +1034,18 @@ namespace satdump
                 }
                 handleSwipePassNavigation(ImRect(content_pos, ImVec2(content_pos.x + content_size.x, content_pos.y + content_size.y)));
             }
+            else if (archive_run_loaded)
+            {
+                updateLayerModelFromArchive();
+                updateLayerComposite();
+                if (layer_mode == LayerMode::Stack)
+                {
+                    for (size_t i = 0; i < kLayerCount; ++i)
+                        stack_layer_views[i].syncTextures();
+                }
+                layer_view.draw(content_size);
+                handleSwipePassNavigation(ImRect(content_pos, ImVec2(content_pos.x + content_size.x, content_pos.y + content_size.y)));
+            }
             return;
         }
 
@@ -887,6 +1101,20 @@ namespace satdump
                     {
                         handler->drawContents(content_size);
                     }
+                    handleSwipePassNavigation(ImRect(content_pos, ImVec2(content_pos.x + content_size.x, content_pos.y + content_size.y)));
+                }
+                else if (archive_run_loaded)
+                {
+                    ImVec2 content_pos = ImGui::GetCursorScreenPos();
+                    ImVec2 content_size = {float(right_width - 4), float(viewer_size.y)};
+                    updateLayerModelFromArchive();
+                    updateLayerComposite();
+                    if (layer_mode == LayerMode::Stack)
+                    {
+                        for (size_t i = 0; i < kLayerCount; ++i)
+                            stack_layer_views[i].syncTextures();
+                    }
+                    layer_view.draw(content_size);
                     handleSwipePassNavigation(ImRect(content_pos, ImVec2(content_pos.x + content_size.x, content_pos.y + content_size.y)));
                 }
             }

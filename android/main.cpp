@@ -1,6 +1,8 @@
 #include <unistd.h>
 #include <android/log.h>
 #include <android/asset_manager.h>
+#include <android/input.h>
+#include <android/keycodes.h>
 #include "backend.h"
 #include "main_ui.h"
 #include "logger.h"
@@ -270,6 +272,21 @@ static void handleAppCmd(struct android_app *app, int32_t appCmd)
 
 static int32_t handleInputEvent(struct android_app *app, AInputEvent *inputEvent)
 {
+    (void)app;
+
+    if (AInputEvent_getType(inputEvent) == AINPUT_EVENT_TYPE_KEY &&
+        AKeyEvent_getKeyCode(inputEvent) == AKEYCODE_BACK)
+    {
+        // Viewer -> Archive. Archive keeps default Android back behavior (exit).
+        if (satdump::current_screen == satdump::Screen::Viewer)
+        {
+            if (AKeyEvent_getAction(inputEvent) == AKEY_EVENT_ACTION_UP)
+                satdump::current_screen = satdump::Screen::Archive;
+            return 1;
+        }
+        return 0;
+    }
+
     return ImGui_ImplAndroid_HandleInputEvent(inputEvent);
 }
 

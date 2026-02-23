@@ -33,6 +33,7 @@
 #ifndef IMGUI_DISABLE
 #include "imgui_impl_android.h"
 #include <time.h>
+#include <cmath>
 #include <android/native_window.h>
 #include <android/input.h>
 #include <android/keycodes.h>
@@ -42,6 +43,71 @@
 static double                                   g_Time = 0.0;
 static ANativeWindow*                           g_Window;
 static char                                     g_LogTag[] = "ImGuiExample";
+static bool                                     g_PinchActive = false;
+static int32_t                                  g_PinchPointerId0 = -1;
+static int32_t                                  g_PinchPointerId1 = -1;
+static float                                    g_PinchLastDistance = 0.0f;
+
+static int ImGui_ImplAndroid_FindPointerIndexById(const AInputEvent* event, int32_t pointer_id)
+{
+    const int pointer_count = AMotionEvent_getPointerCount(event);
+    for (int i = 0; i < pointer_count; ++i)
+        if (AMotionEvent_getPointerId(event, i) == pointer_id)
+            return i;
+    return -1;
+}
+
+static bool ImGui_ImplAndroid_UpdatePinchFromPointers(const AInputEvent* event, ImGuiIO& io)
+{
+    const int pointer_count = AMotionEvent_getPointerCount(event);
+    if (pointer_count < 2)
+        return false;
+
+    int index0 = ImGui_ImplAndroid_FindPointerIndexById(event, g_PinchPointerId0);
+    int index1 = ImGui_ImplAndroid_FindPointerIndexById(event, g_PinchPointerId1);
+    if (index0 < 0 || index1 < 0 || index0 == index1)
+    {
+        index0 = 0;
+        index1 = 1;
+        g_PinchPointerId0 = AMotionEvent_getPointerId(event, index0);
+        g_PinchPointerId1 = AMotionEvent_getPointerId(event, index1);
+        g_PinchLastDistance = 0.0f;
+    }
+
+    const float x0 = AMotionEvent_getX(event, index0);
+    const float y0 = AMotionEvent_getY(event, index0);
+    const float x1 = AMotionEvent_getX(event, index1);
+    const float y1 = AMotionEvent_getY(event, index1);
+    const float dx = x1 - x0;
+    const float dy = y1 - y0;
+    const float distance = std::sqrt(dx * dx + dy * dy);
+    const float midpoint_x = 0.5f * (x0 + x1);
+    const float midpoint_y = 0.5f * (y0 + y1);
+
+    io.AddMousePosEvent(midpoint_x, midpoint_y);
+    io.AddMouseButtonEvent(0, false);
+
+    constexpr float kPinchDeltaThresholdPx = 4.0f;
+    constexpr float kPinchWheelScale = 0.01f;
+    if (g_PinchActive && g_PinchLastDistance > 0.0f)
+    {
+        const float delta = distance - g_PinchLastDistance;
+        if (std::fabs(delta) >= kPinchDeltaThresholdPx)
+            io.AddMouseWheelEvent(0.0f, delta * kPinchWheelScale);
+    }
+
+    g_PinchLastDistance = distance;
+    g_PinchActive = true;
+    return true;
+}
+
+static void ImGui_ImplAndroid_ResetPinch()
+{
+    g_PinchActive = false;
+    g_PinchPointerId0 = -1;
+    g_PinchPointerId1 = -1;
+    g_PinchLastDistance = 0.0f;
+}
 
 static ImGuiKey ImGui_ImplAndroid_KeyCodeToImGuiKey(int32_t key_code)
 {
@@ -220,7 +286,6 @@ int32_t ImGui_ImplAndroid_HandleInputEvent(const AInputEvent* input_event)
         switch (event_action)
         {
         case AMOTION_EVENT_ACTION_DOWN:
-        case AMOTION_EVENT_ACTION_UP:
         {
             // Physical mouse buttons (and probably other physical devices) also invoke the actions AMOTION_EVENT_ACTION_DOWN/_UP,
             // but we have to process them separately to identify the actual button pressed. This is done below via
@@ -230,10 +295,26 @@ int32_t ImGui_ImplAndroid_HandleInputEvent(const AInputEvent* input_event)
                 tool_type == AMOTION_EVENT_TOOL_TYPE_STYLUS || tool_type == AMOTION_EVENT_TOOL_TYPE_MOUSE)
             {
                 io.AddMousePosEvent(AMotionEvent_getX(input_event, event_pointer_index), AMotionEvent_getY(input_event, event_pointer_index));
-                io.AddMouseButtonEvent(0, event_action == AMOTION_EVENT_ACTION_DOWN);
+                io.AddMouseButtonEvent(0, true);
             }
+            ImGui_ImplAndroid_ResetPinch();
             break;
         }
+        case AMOTION_EVENT_ACTION_UP:
+        {
+            io.AddMousePosEvent(AMotionEvent_getX(input_event, event_pointer_index), AMotionEvent_getY(input_event, event_pointer_index));
+            io.AddMouseButtonEvent(0, false);
+            ImGui_ImplAndroid_ResetPinch();
+            break;
+        }
+        case AMOTION_EVENT_ACTION_POINTER_DOWN:
+            if (AMotionEvent_getPointerCount(input_event) >= 2)
+                ImGui_ImplAndroid_UpdatePinchFromPointers(input_event, io);
+            break;
+        case AMOTION_EVENT_ACTION_POINTER_UP:
+            if (AMotionEvent_getPointerCount(input_event) <= 2)
+                ImGui_ImplAndroid_ResetPinch();
+            break;
         case AMOTION_EVENT_ACTION_BUTTON_PRESS:
         case AMOTION_EVENT_ACTION_BUTTON_RELEASE:
         {
@@ -243,9 +324,16 @@ int32_t ImGui_ImplAndroid_HandleInputEvent(const AInputEvent* input_event)
             io.AddMouseButtonEvent(2, (button_state & AMOTION_EVENT_BUTTON_TERTIARY) != 0);
             break;
         }
+        case AMOTION_EVENT_ACTION_CANCEL:
+            io.AddMouseButtonEvent(0, false);
+            ImGui_ImplAndroid_ResetPinch();
+            break;
         case AMOTION_EVENT_ACTION_HOVER_MOVE: // Hovering: Tool moves while NOT pressed (such as a physical mouse)
         case AMOTION_EVENT_ACTION_MOVE:       // Touch pointer moves while DOWN
-            io.AddMousePosEvent(AMotionEvent_getX(input_event, event_pointer_index), AMotionEvent_getY(input_event, event_pointer_index));
+            if (AMotionEvent_getPointerCount(input_event) >= 2)
+                ImGui_ImplAndroid_UpdatePinchFromPointers(input_event, io);
+            else
+                io.AddMousePosEvent(AMotionEvent_getX(input_event, event_pointer_index), AMotionEvent_getY(input_event, event_pointer_index));
             break;
         case AMOTION_EVENT_ACTION_SCROLL:
             io.AddMouseWheelEvent(AMotionEvent_getAxisValue(input_event, AMOTION_EVENT_AXIS_HSCROLL, event_pointer_index), AMotionEvent_getAxisValue(input_event, AMOTION_EVENT_AXIS_VSCROLL, event_pointer_index));

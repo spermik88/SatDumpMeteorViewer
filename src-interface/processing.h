@@ -26,7 +26,9 @@ namespace satdump
                      std::string output_file,
                      nlohmann::json parameters);
 
-        void package_run_output(const std::string &output_dir, const std::string &run_id = "");
+        void package_run_output(const std::string &output_dir,
+                                const std::string &run_id = "",
+                                bool prune_to_image_only = false);
         void enforce_images_disk_limit(const std::string &output_file);
     }
 }

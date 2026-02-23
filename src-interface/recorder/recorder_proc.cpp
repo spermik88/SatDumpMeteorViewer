@@ -8,6 +8,7 @@
 #include "products/dataset.h"
 #include "products/image_products.h"
 #include "products/products.h"
+#include "archive_path.h"
 #include <algorithm>
 #include <chrono>
 #include <cctype>
@@ -93,7 +94,7 @@ namespace satdump
                 if (run_name.empty())
                     run_name = "run";
 
-                std::string fallback_final_dir = (std::filesystem::path("./live_output") / run_name).string();
+                std::string fallback_final_dir = (get_archive_base_path() / run_name).string();
                 if (fallback_final_dir != final_dir)
                 {
                     logger->warn("Live output path is not writable (%s), falling back to %s",
@@ -171,6 +172,40 @@ namespace satdump
             std::string out;
             for (const auto &src : sources)
                 out += src.name + '\0';
+            return out;
+        }
+
+        struct RunArtifactProbe
+        {
+            std::filesystem::file_time_type latest_mtime = std::filesystem::file_time_type::min();
+            size_t file_count = 0;
+        };
+
+        RunArtifactProbe collect_run_artifact_probe(const std::filesystem::path &run_dir)
+        {
+            RunArtifactProbe out;
+            if (run_dir.empty() || !std::filesystem::exists(run_dir))
+                return out;
+
+            std::error_code ec;
+            auto it = std::filesystem::recursive_directory_iterator(
+                run_dir,
+                std::filesystem::directory_options::skip_permission_denied,
+                ec);
+            auto end = std::filesystem::recursive_directory_iterator();
+            while (it != end)
+            {
+                if (it->is_regular_file(ec))
+                {
+                    out.file_count++;
+                    std::error_code ts_ec;
+                    auto ts = std::filesystem::last_write_time(it->path(), ts_ec);
+                    if (!ts_ec && (out.latest_mtime == std::filesystem::file_time_type::min() || ts > out.latest_mtime))
+                        out.latest_mtime = ts;
+                }
+                it.increment(ec);
+            }
+
             return out;
         }
     }
@@ -408,7 +443,58 @@ namespace satdump
 
         eventBus->fire_event<ops::FirstValidFrameEvent>({pipeline_run_id, "live_dataset"});
         first_valid_frame_emitted_run_id = pipeline_run_id;
+        pass_last_artifact_update_time = now;
         set_rx_status("receiving");
+    }
+
+    void RecorderApplication::reset_pass_inactivity_watchdog()
+    {
+        next_pass_inactivity_probe_time = std::chrono::steady_clock::time_point::min();
+        pass_last_artifact_update_time = std::chrono::steady_clock::time_point::min();
+        pass_last_artifact_mtime = std::filesystem::file_time_type::min();
+        pass_last_artifact_file_count = 0;
+    }
+
+    void RecorderApplication::maybe_finalize_pass_on_inactivity()
+    {
+        if (!appliance_mode || !is_processing || pipeline_run_id.empty())
+            return;
+
+        // Auto-finalize only after the pass has produced the first valid frame.
+        if (first_valid_frame_emitted_run_id != pipeline_run_id && !ops::get_state().first_valid_frame)
+            return;
+
+        auto now = std::chrono::steady_clock::now();
+        if (now < next_pass_inactivity_probe_time)
+            return;
+        next_pass_inactivity_probe_time = now + std::chrono::seconds(1);
+
+        std::filesystem::path probe_dir = pipeline_output_dir_tmp.empty() ? pipeline_output_dir : pipeline_output_dir_tmp;
+        RunArtifactProbe probe = collect_run_artifact_probe(probe_dir);
+
+        bool changed = false;
+        if (probe.file_count != pass_last_artifact_file_count)
+            changed = true;
+        if (probe.latest_mtime != std::filesystem::file_time_type::min() &&
+            (pass_last_artifact_mtime == std::filesystem::file_time_type::min() || probe.latest_mtime > pass_last_artifact_mtime))
+            changed = true;
+
+        pass_last_artifact_file_count = probe.file_count;
+        pass_last_artifact_mtime = probe.latest_mtime;
+        if (changed)
+            pass_last_artifact_update_time = now;
+
+        if (pass_last_artifact_update_time == std::chrono::steady_clock::time_point::min())
+            pass_last_artifact_update_time = now;
+
+        auto inactive_for = std::chrono::duration_cast<std::chrono::seconds>(now - pass_last_artifact_update_time).count();
+        if (inactive_for < pass_inactivity_timeout_seconds)
+            return;
+
+        logger->info("No updates in run artifacts for %lld seconds, finalizing pass %s.",
+                     (long long)inactive_for,
+                     pipeline_run_id.c_str());
+        stop_processing();
     }
 
     void RecorderApplication::set_sdr_status(const std::string &status)
@@ -447,8 +533,8 @@ namespace satdump
 
     void RecorderApplication::handle_source_restart()
     {
-        const int restart_reset_backoff = appliance_mode ? 1 : 3;
-        const int restart_max_backoff = appliance_mode ? 5 : 60;
+        const int restart_reset_backoff = 3;
+        const int restart_max_backoff = 60;
 
         if (!source_ptr)
         {
@@ -601,7 +687,15 @@ namespace satdump
             try
             {
                 if (automated_live_output_dir)
-                    pipeline_output_dir = prepareAutomatedPipelineFolder(time(0), source_ptr->d_frequency, pipeline_selector.selected_pipeline.name, "", false);
+                {
+                    if (appliance_mode)
+                        ensure_archive_base_path();
+                    pipeline_output_dir = prepareAutomatedPipelineFolder(time(0),
+                                                                         source_ptr->d_frequency,
+                                                                         pipeline_selector.selected_pipeline.name,
+                                                                         appliance_mode ? get_archive_base_path().string() : "",
+                                                                         false);
+                }
                 else
                     pipeline_output_dir = pipeline_selector.outputdirselect.getPath();
 
@@ -611,6 +705,7 @@ namespace satdump
                 pipeline_run_id = ops::normalize_run_id(std::filesystem::path(pipeline_output_dir).filename().string());
                 first_valid_frame_emitted_run_id.clear();
                 next_first_valid_probe_time = std::chrono::steady_clock::time_point::min();
+                reset_pass_inactivity_watchdog();
                 ops::set_live_run(pipeline_run_id,
                                   pipeline_output_dir_tmp,
                                   pipeline_output_dir,
@@ -654,8 +749,6 @@ namespace satdump
 
             bool finalized = finalize_live_output_dir(pipeline_output_dir_tmp, pipeline_output_dir);
             std::string output_dir_for_processing = finalized ? pipeline_output_dir : pipeline_output_dir_tmp;
-            if (finalized)
-                eventBus->fire_event<ops::RunFinalizedEvent>({pipeline_run_id, pipeline_output_dir});
 
             bool launched_postproc = false;
             if (config::main_cfg["user_interface"]["finish_processing_after_live"]["value"].get<bool>() && !output_files.empty())
@@ -670,11 +763,16 @@ namespace satdump
             }
 
             live_pipeline.reset();
-            processing::package_run_output(output_dir_for_processing, pipeline_run_id);
-            processing::enforce_images_disk_limit(output_dir_for_processing);
-            ops::set_pipeline_active(false);
+            bool prune_to_image_only = appliance_mode && !launched_postproc;
+            processing::package_run_output(output_dir_for_processing, pipeline_run_id, prune_to_image_only);
+            if (finalized)
+                eventBus->fire_event<ops::RunFinalizedEvent>({pipeline_run_id, pipeline_output_dir});
             if (!launched_postproc)
-                set_rx_status("idle");
+                processing::enforce_images_disk_limit(output_dir_for_processing);
+            ops::set_pipeline_active(false);
+            reset_pass_inactivity_watchdog();
+            if (!launched_postproc)
+                set_rx_status(appliance_mode ? "waiting" : "idle");
         }
     }
 
@@ -715,7 +813,7 @@ namespace satdump
                 sdr_select_id = i;
                 set_sdr_status("online");
                 source_restart_pending = false;
-                source_restart_backoff_seconds = appliance_mode ? 1 : 3;
+                source_restart_backoff_seconds = 3;
                 source_unhealthy_since = std::chrono::steady_clock::time_point::min();
                 return true;
             }
@@ -768,8 +866,9 @@ namespace satdump
                 source_ptr.reset();
                 source_restart_pending = false;
                 pipeline_restart_pending = false;
-                source_restart_backoff_seconds = 1;
+                source_restart_backoff_seconds = 3;
                 source_unhealthy_since = std::chrono::steady_clock::time_point::min();
+                reset_pass_inactivity_watchdog();
                 set_sdr_status("offline");
                 set_rx_status("waiting");
             };
@@ -845,7 +944,7 @@ namespace satdump
                     set_rx_status("waiting");
                     source_restart_pending = true;
                     source_restart_time = now + std::chrono::seconds(source_restart_backoff_seconds);
-                    source_restart_backoff_seconds = std::min(source_restart_backoff_seconds * 2, 5);
+                    source_restart_backoff_seconds = std::min(source_restart_backoff_seconds * 2, 60);
                     return;
                 }
             }
@@ -857,6 +956,7 @@ namespace satdump
         }
 
         maybe_emit_first_valid_frame();
+        maybe_finalize_pass_on_inactivity();
 
         handle_source_restart();
     }

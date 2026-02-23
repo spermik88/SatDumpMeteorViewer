@@ -5,6 +5,7 @@
 #include "core/style.h"
 #include "common/imgui_utils.h"
 #include "main_ui.h"
+#include "archive_path.h"
 #include "common/ops_state.h"
 #include "common/utils.h"
 #include "nlohmann/json_utils.h"
@@ -22,14 +23,6 @@ namespace satdump
 {
     namespace
     {
-        std::filesystem::path archive_base_path()
-        {
-            std::filesystem::path preferred = std::filesystem::path("files") / "images";
-            if (std::filesystem::exists(preferred))
-                return preferred;
-            return std::filesystem::path("images");
-        }
-
         std::optional<double> parse_timestamp(const std::string &value)
         {
             static const std::vector<const char *> formats = {
@@ -143,39 +136,48 @@ namespace satdump
             return;
 
         auto mode = viewer_app->getLayerMode();
-        ImGui::TextUnformatted("РЕЖИМ");
+        ImGui::TextUnformatted("MODE");
         ImGui::SameLine();
-        if (ImGui::RadioButton("ОДИН", mode == ViewerApplication::LayerMode::Single))
+        if (ImGui::RadioButton("SINGLE", mode == ViewerApplication::LayerMode::Single))
             viewer_app->setLayerMode(ViewerApplication::LayerMode::Single);
         ImGui::SameLine();
-        if (ImGui::RadioButton("СТЕК", mode == ViewerApplication::LayerMode::Stack))
+        if (ImGui::RadioButton("STACK", mode == ViewerApplication::LayerMode::Stack))
             viewer_app->setLayerMode(ViewerApplication::LayerMode::Stack);
 
         ImGui::SameLine();
         bool preview_enabled = viewer_app->isPreviewEnabled();
         bool preview_available = viewer_app->isPreviewAvailable();
         ImGui::BeginDisabled(!preview_available);
-        if (ImGui::Checkbox("Превью", &preview_enabled))
+        if (ImGui::Checkbox("Preview", &preview_enabled))
             viewer_app->setPreviewEnabled(preview_enabled);
         ImGui::EndDisabled();
 
         ImGui::SameLine();
-        ImGui::TextUnformatted("Слои");
+        ImGui::TextUnformatted("Layers");
+
+        bool has_visible_layers = false;
         for (size_t layer_index = 0; layer_index < ViewerApplication::kLayerCount; ++layer_index)
         {
+            if (!viewer_app->isLayerAvailable(layer_index))
+                continue;
+
+            has_visible_layers = true;
             ImGui::SameLine();
-            std::string label = "##layer_" + std::to_string(layer_index + 1);
+            std::string label = "Layer" + std::to_string(layer_index + 1);
             bool layer_enabled = viewer_app->isLayerEnabled(layer_index);
-            bool layer_available = viewer_app->isLayerAvailable(layer_index);
-            ImGui::BeginDisabled(!layer_available);
             if (ImGui::Checkbox(label.c_str(), &layer_enabled))
                 viewer_app->setLayerEnabled(layer_index, layer_enabled);
-            ImGui::EndDisabled();
         }
+        if (!has_visible_layers)
+        {
+            ImGui::SameLine();
+            ImGui::TextDisabled("none");
+        }
+
         if (mode == ViewerApplication::LayerMode::Stack && viewer_app->shouldWarnAboutStackLayers())
         {
             ImGui::SameLine();
-            ImGui::TextColored(style::theme.yellow.Value, "Слишком много слоёв (>3): снижена альфа");
+            ImGui::TextColored(style::theme.yellow.Value, "Too many layers (>3): reduced alpha");
         }
     }
 
@@ -188,7 +190,7 @@ namespace satdump
             {
                 cached_img_time_run_id = selected_run_id;
                 double timestamp = 0.0;
-                std::filesystem::path run_dir = archive_base_path() / selected_run_id;
+                std::filesystem::path run_dir = get_archive_base_path() / selected_run_id;
                 if (std::filesystem::exists(run_dir))
                     timestamp = read_run_timestamp(run_dir);
                 if (timestamp > 0.0)

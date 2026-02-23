@@ -12,6 +12,7 @@
 #include "nlohmann/json_utils.h"
 #include "common/overlay_handler.h"
 #include <array>
+#include <filesystem>
 
 #include "common/projection/reprojector_backend_utils.h"
 
@@ -91,12 +92,15 @@ namespace satdump
         virtual void drawPanel();
         virtual void drawContent();
         void updateLayerModelFromHandler(const std::shared_ptr<ViewerHandler> &handler);
+        void updateLayerModelFromArchive();
         void updateLayerComposite();
         int resolveSingleLayerSelection() const;
         void updateLayerSelectionsForMode();
         void refreshStackComposite();
         void resetStackDefaults();
         bool shouldUseStackComposite() const;
+        bool loadArchiveImagesFromRun(const std::filesystem::path &run_path, const std::string &run_id);
+        void clearArchiveRunImages();
         void handleSwipePassNavigation(const ImRect &content_rect);
         void switchPass(int offset);
 
@@ -153,6 +157,12 @@ namespace satdump
         uint64_t stack_composite_revision = 0;
         std::array<bool, kLayerCount> stack_default_layer_enabled{};
         bool stack_default_preview_enabled = true;
+        bool archive_run_loaded = false;
+        std::array<image::Image, kLayerCount> archive_layers{};
+        std::array<bool, kLayerCount> archive_layers_available{};
+        image::Image archive_preview;
+        bool archive_preview_available = false;
+        std::string archive_loaded_run_id;
 
         bool swipe_tracking = false;
         ImVec2 swipe_start_pos = ImVec2(0.0f, 0.0f);
@@ -311,6 +321,7 @@ namespace satdump
         ~ViewerApplication();
         void save_settings();
         void loadDatasetInViewer(std::string path);
+        bool loadArchiveRun(const std::string &run_dir, const std::string &run_id = "");
         void loadProductsInViewer(std::string path, std::string dataset_name = "");
         void markLayerCompositeDirty() { layer_composite_dirty = true; }
         bool isLayerAvailable(size_t index) const;

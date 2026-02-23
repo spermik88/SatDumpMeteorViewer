@@ -20,6 +20,7 @@
 
 #include "tracking/tracking_widget.h"
 #include <chrono>
+#include <filesystem>
 
 namespace satdump
 {
@@ -136,6 +137,11 @@ namespace satdump
         nlohmann::json pipeline_params;
         std::string first_valid_frame_emitted_run_id;
         std::chrono::steady_clock::time_point next_first_valid_probe_time = std::chrono::steady_clock::time_point::min();
+        std::chrono::steady_clock::time_point next_pass_inactivity_probe_time = std::chrono::steady_clock::time_point::min();
+        std::chrono::steady_clock::time_point pass_last_artifact_update_time = std::chrono::steady_clock::time_point::min();
+        std::filesystem::file_time_type pass_last_artifact_mtime = std::filesystem::file_time_type::min();
+        size_t pass_last_artifact_file_count = 0;
+        int pass_inactivity_timeout_seconds = 90;
 
         int pipeline_preset_id = 0;
 
@@ -214,6 +220,8 @@ namespace satdump
         bool is_meteor_pipeline_active() const;
         bool has_first_valid_frame_artifact(const std::string &run_dir) const;
         void maybe_emit_first_valid_frame();
+        void reset_pass_inactivity_watchdog();
+        void maybe_finalize_pass_on_inactivity();
         void set_sdr_status(const std::string &status);
         void set_rx_status(const std::string &status);
 

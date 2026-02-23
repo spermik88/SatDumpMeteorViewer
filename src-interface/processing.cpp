@@ -5,6 +5,7 @@
 #include <ctime>
 #include <iomanip>
 #include <optional>
+#include <set>
 #include <sstream>
 #include "processing.h"
 #include "logger.h"
@@ -20,6 +21,7 @@
 #include "common/ops_state.h"
 #include "core/plugin.h"
 #include "nlohmann/json_utils.h"
+#include "archive_path.h"
 
 namespace satdump
 {
@@ -34,14 +36,6 @@ namespace satdump
         namespace
         {
             constexpr uint64_t kImagesLimitBytes = 10ull * 1024ull * 1024ull * 1024ull;
-
-            std::filesystem::path archive_base_path()
-            {
-                std::filesystem::path preferred = std::filesystem::path("files") / "images";
-                if (std::filesystem::exists(preferred))
-                    return preferred;
-                return std::filesystem::path("images");
-            }
 
             std::optional<double> parse_timestamp(const std::string &value)
             {
@@ -396,9 +390,50 @@ namespace satdump
 
                 saveJsonFile((run_path / "meta.json").string(), meta);
             }
+
+            bool should_prune_to_image_only(const std::filesystem::path &run_path, bool requested)
+            {
+                if (!requested || !is_appliance_mode())
+                    return false;
+                return is_path_within(get_archive_base_path(), run_path);
+            }
+
+            void prune_run_to_image_only(const std::filesystem::path &run_path,
+                                         const std::vector<std::string> &layers,
+                                         bool has_composite)
+            {
+                std::set<std::string> keep_files = {"preview.png", "meta.json", "thumb.png"};
+                if (has_composite)
+                    keep_files.insert("composite.png");
+                for (const auto &layer_name : layers)
+                    keep_files.insert(layer_name);
+
+                std::error_code ec;
+                for (const auto &entry : std::filesystem::directory_iterator(run_path, ec))
+                {
+                    if (ec)
+                        break;
+
+                    std::string filename = entry.path().filename().string();
+                    if (keep_files.find(filename) != keep_files.end())
+                        continue;
+
+                    std::error_code remove_ec;
+                    if (entry.is_directory())
+                        std::filesystem::remove_all(entry.path(), remove_ec);
+                    else
+                        std::filesystem::remove(entry.path(), remove_ec);
+
+                    if (remove_ec)
+                        logger->warn("Failed to prune %s from run %s: %s",
+                                     filename.c_str(),
+                                     run_path.string().c_str(),
+                                     remove_ec.message().c_str());
+                }
+            }
         }
 
-        void package_run_output(const std::string &output_dir, const std::string &run_id)
+        void package_run_output(const std::string &output_dir, const std::string &run_id, bool prune_to_image_only)
         {
             std::filesystem::path run_path(output_dir);
             if (!std::filesystem::exists(run_path))
@@ -414,12 +449,14 @@ namespace satdump
 
             std::string effective_run_id = run_id.empty() ? run_path.filename().string() : run_id;
             write_meta_for_run(run_path, effective_run_id, layers, default_layer);
+            if (should_prune_to_image_only(run_path, prune_to_image_only))
+                prune_run_to_image_only(run_path, layers, std::filesystem::exists(run_path / "composite.png"));
             eventBus->fire_event<ops::ArchiveChangedEvent>({"run_packaged", effective_run_id});
         }
 
         void enforce_images_disk_limit(const std::string &output_file)
         {
-            std::filesystem::path base_path = archive_base_path();
+            std::filesystem::path base_path = get_archive_base_path();
             if (!std::filesystem::exists(base_path))
                 return;
 
@@ -535,7 +572,7 @@ namespace satdump
 
             logger->info("Done! Goodbye");
 
-            package_run_output(output_file);
+            package_run_output(output_file, "", is_appliance_mode());
 
             if (config::main_cfg["user_interface"]["open_viewer_post_processing"]["value"].get<bool>())
             {

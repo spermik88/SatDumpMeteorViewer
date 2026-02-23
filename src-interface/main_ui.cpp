@@ -15,6 +15,7 @@
 #include "common/utils.h"
 #include "nlohmann/json_utils.h"
 #include "common/ops_state.h"
+#include "archive_path.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -59,14 +60,6 @@ namespace satdump
         std::vector<ArchiveEntry> archive_entries;
         bool archive_index_ready = false;
         std::mutex archive_index_mutex;
-
-        std::filesystem::path archive_base_path()
-        {
-            std::filesystem::path preferred = std::filesystem::path("files") / "images";
-            if (std::filesystem::exists(preferred))
-                return preferred;
-            return std::filesystem::path("images");
-        }
 
         bool parse_archive_meta(const nlohmann::ordered_json &meta,
                                 const std::filesystem::path &run_dir,
@@ -120,13 +113,9 @@ namespace satdump
             if (has_composite && !std::filesystem::exists(run_dir / "composite.png"))
                 return false;
 
-            std::filesystem::path dataset_path = run_dir / "dataset.json";
-            if (!std::filesystem::exists(dataset_path))
-                return false;
-
             item.run_id = run_id;
             item.directory_path = run_dir.string();
-            item.dataset_path = dataset_path.string();
+            item.dataset_path = (run_dir / "dataset.json").string();
             item.thumb_path = (run_dir / "thumb.png").string();
             item.timestamp = meta["timestamp"].get<double>();
             item.label = meta["datetime_local"].get<std::string>();
@@ -170,7 +159,7 @@ namespace satdump
             std::lock_guard<std::mutex> lock(archive_index_mutex);
             archive_entries.clear();
             archive_index_ready = true;
-            std::filesystem::path base_path = archive_base_path();
+            std::filesystem::path base_path = get_archive_base_path();
 
             if (!std::filesystem::exists(base_path))
                 return;
@@ -183,26 +172,39 @@ namespace satdump
                     continue;
 
                 ArchiveEntry item;
+                std::filesystem::path dataset_path = entry.path() / "dataset.json";
 
                 std::filesystem::path meta_path = entry.path() / "meta.json";
-                if (!std::filesystem::exists(meta_path))
-                    continue;
-
-                nlohmann::ordered_json meta;
-                try
+                if (std::filesystem::exists(meta_path))
                 {
-                    meta = loadJsonFile(meta_path.string());
-                }
-                catch (const std::exception &)
-                {
-                    continue;
+                    nlohmann::ordered_json meta;
+                    try
+                    {
+                        meta = loadJsonFile(meta_path.string());
+                    }
+                    catch (const std::exception &)
+                    {
+                    }
+
+                    if (parse_archive_meta(meta, entry.path(), item))
+                    {
+                        generate_thumbnail_if_needed(entry.path());
+                        archive_entries.push_back(item);
+                        continue;
+                    }
                 }
 
-                if (!parse_archive_meta(meta, entry.path(), item))
+                // Legacy run fallback: keep dataset-based entries readable.
+                if (!std::filesystem::exists(dataset_path))
                     continue;
 
+                item.run_id = entry.path().filename().string();
+                item.directory_path = entry.path().string();
+                item.dataset_path = dataset_path.string();
+                item.thumb_path = (entry.path() / "thumb.png").string();
+                item.timestamp = 0.0;
+                item.label = item.run_id;
                 generate_thumbnail_if_needed(entry.path());
-
                 archive_entries.push_back(item);
             }
 
@@ -296,8 +298,14 @@ namespace satdump
             return false;
 
         selected_run_id = run_id;
-        if (std::filesystem::exists(entry->dataset_path))
+        bool opened = viewer_app->loadArchiveRun(entry->directory_path, run_id);
+        if (!opened && std::filesystem::exists(entry->dataset_path))
+        {
             viewer_app->loadDatasetInViewer(entry->dataset_path);
+            opened = true;
+        }
+        if (!opened)
+            return false;
         current_screen = Screen::Viewer;
         return true;
     }
@@ -335,15 +343,17 @@ namespace satdump
                                                                   selected_run_id = ops::normalize_run_id(evt.run_id);
                                                                   current_screen = Screen::Viewer;
 
-                                                                  ops::OpsStateSnapshot state = ops::get_state();
-                                                                  std::filesystem::path dataset_path = std::filesystem::path(state.current_run_tmp_dir) / "dataset.json";
-                                                                  if (!std::filesystem::exists(dataset_path))
-                                                                      dataset_path = std::filesystem::path(state.current_run_final_dir) / "dataset.json";
-                                                                  if (std::filesystem::exists(dataset_path))
-                                                                  {
-                                                                      ui_thread_pool.push([dataset_path](int)
-                                                                                          { viewer_app->loadDatasetInViewer(dataset_path.string()); });
-                                                                  }
+                                                                  std::string run_id = selected_run_id;
+                                                                  ui_thread_pool.push([run_id](int)
+                                                                                      {
+                                                                                          ops::OpsStateSnapshot state = ops::get_state();
+                                                                                          if (!state.current_run_tmp_dir.empty() &&
+                                                                                              viewer_app->loadArchiveRun(state.current_run_tmp_dir, run_id))
+                                                                                              return;
+                                                                                          if (!state.current_run_final_dir.empty() &&
+                                                                                              viewer_app->loadArchiveRun(state.current_run_final_dir, run_id))
+                                                                                              return;
+                                                                                      });
                                                               });
         eventBus->register_handler<ops::RunFinalizedEvent>([](const ops::RunFinalizedEvent &)
                                                            { invalidate_archive_index(); });
@@ -365,7 +375,10 @@ namespace satdump
         eventBus->register_handler<ops::ArchiveChangedEvent>([](const ops::ArchiveChangedEvent &)
                                                              { invalidate_archive_index(); });
 
+        ensure_archive_base_path();
         load_archive_index();
+        if (!archive_entries.empty())
+            open_run_in_viewer(archive_entries.front().run_id);
     }
 
     void exitMainUI()
