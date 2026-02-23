@@ -199,8 +199,6 @@ void tick()
         return;
 
     ImGuiIO &io = ImGui::GetIO();
-    if (io.BackendRendererUserData == nullptr || io.BackendPlatformUserData == nullptr)
-        return;
 
     // Poll Unicode characters via JNI
     // FIXME: do not call this every frame because of JNI overhead

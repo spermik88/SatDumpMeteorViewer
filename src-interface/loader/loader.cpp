@@ -70,6 +70,9 @@ namespace satdump
     void LoadingScreenSink::push_frame(std::string str)
     {
         std::pair<int, int> dims = backend::beginFrame();
+        if (dims.first <= 0 || dims.second <= 0)
+            return;
+
         float scale = backend::device_scale;
         ImGui::SetNextWindowPos({0, 0});
         ImGui::SetNextWindowSize({(float)dims.first, (float)dims.second});

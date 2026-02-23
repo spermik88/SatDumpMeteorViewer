@@ -56,10 +56,6 @@ std::pair<int, int> funcBeginFrame()
     eglQuerySurface(g_EglDisplay, g_EglSurface, EGL_WIDTH, &width);
     eglQuerySurface(g_EglDisplay, g_EglSurface, EGL_HEIGHT, &height);
 
-    ImGuiIO &io = ImGui::GetIO();
-    if (io.BackendRendererUserData == nullptr || io.BackendPlatformUserData == nullptr)
-        return {(int)width, (int)height};
-
     // Start the Dear ImGui frame
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplAndroid_NewFrame();
@@ -74,8 +70,6 @@ void funcEndFrame()
         return;
 
     ImGuiIO &io = ImGui::GetIO();
-    if (io.BackendRendererUserData == nullptr || io.BackendPlatformUserData == nullptr)
-        return;
 
     ImGui::Render();
     glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
