@@ -93,6 +93,8 @@ class MainActivity : NativeActivity(), TextWatcher {
 
         // Keep screen on
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        // Prevent Android from auto-showing IME when activity regains focus (e.g. after USB permission dialog)
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
 
         // Text crap
         mLayout = RelativeLayout(this);
@@ -100,7 +102,6 @@ class MainActivity : NativeActivity(), TextWatcher {
         mLayout!!.addView(editText, RelativeLayout.LayoutParams(10000, 10000));
         editText!!.setVisibility(View.VISIBLE);
         editText!!.setInputType(InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        editText!!.requestFocus();
         editText!!.setText(" ");
         editText!!.setSelection(1);
         lastFiller = " ";
@@ -261,12 +262,14 @@ class MainActivity : NativeActivity(), TextWatcher {
 
     fun showSoftInput() {
         val inputMethodManager = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        editText?.requestFocus()
         inputMethodManager.showSoftInput(editText, 0)
     }
 
     fun hideSoftInput() {
         val inputMethodManager = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         inputMethodManager.hideSoftInputFromWindow(editText!!.windowToken, 0)
+        editText?.clearFocus()
     }
 
     // Queue for the Unicode characters to be polled from native code (via pollUnicodeChar())
