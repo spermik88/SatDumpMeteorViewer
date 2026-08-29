@@ -31,20 +31,29 @@ if(NOT EXISTS ${ANDROID_DEPS_LIB_DIR})
   )
 endif()
 
-# LIBVOLK
+# LIBVOLK.  CMake may install a versioned shared object (for example
+# libvolk.so.3.1.2) without an unversioned symlink on Android, so accept both
+# static and versioned shared library names emitted by android/deps.
 set(VOLK_SEARCH_PATH ${ANDROID_DEPS_LIB_DIR})
+file(GLOB VOLK_CANDIDATES LIST_DIRECTORIES false
+  "${VOLK_SEARCH_PATH}/libvolk.a"
+  "${VOLK_SEARCH_PATH}/libvolk_static.a"
+  "${VOLK_SEARCH_PATH}/libvolk*.a"
+  "${VOLK_SEARCH_PATH}/libvolk.so"
+  "${VOLK_SEARCH_PATH}/libvolk.so.*"
+)
+list(SORT VOLK_CANDIDATES)
 set(VOLK_LIBRARY "")
-if(EXISTS "${VOLK_SEARCH_PATH}/libvolk.a")
-  set(VOLK_LIBRARY "${VOLK_SEARCH_PATH}/libvolk.a")
-elseif(EXISTS "${VOLK_SEARCH_PATH}/libvolk.so")
-  set(VOLK_LIBRARY "${VOLK_SEARCH_PATH}/libvolk.so")
-elseif(EXISTS "${VOLK_SEARCH_PATH}/libvolk_static.a")
-  set(VOLK_LIBRARY "${VOLK_SEARCH_PATH}/libvolk_static.a")
+if(VOLK_CANDIDATES)
+  list(GET VOLK_CANDIDATES 0 VOLK_LIBRARY)
 endif()
 
-if(NOT VOLK_LIBRARY)
+if(NOT VOLK_LIBRARY OR NOT EXISTS "${VOLK_LIBRARY}")
+  file(GLOB AVAILABLE_ANDROID_DEPS LIST_DIRECTORIES false "${VOLK_SEARCH_PATH}/*")
+  list(JOIN AVAILABLE_ANDROID_DEPS "\n    " AVAILABLE_ANDROID_DEPS_TEXT)
   message(FATAL_ERROR
-    "VOLK library not found in ${VOLK_SEARCH_PATH}. Expected one of: libvolk.a, libvolk.so, libvolk_static.a\n"
+    "VOLK library not found in ${VOLK_SEARCH_PATH}. Expected libvolk*.a or libvolk.so*.\n"
+    "Files present:\n    ${AVAILABLE_ANDROID_DEPS_TEXT}\n"
     "If android/deps was not built yet, run: cd android/deps && sh build.sh"
   )
 endif()
