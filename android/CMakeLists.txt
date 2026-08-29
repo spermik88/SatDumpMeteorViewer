@@ -118,7 +118,10 @@ set_target_properties(tiff PROPERTIES IMPORTED_LOCATION ${PROJECT_SOURCE_DIR}/de
 # LibUSB
 file(GLOB_RECURSE libusb_cpps deps/libusb/*.c)
 add_library(usb STATIC ${libusb_cpps})
-target_include_directories(usb PRIVATE deps/libusb/)
+target_include_directories(usb PRIVATE
+  deps/libusb/
+  ${ANDROID_NDK}/sources/android/native_app_glue
+)
 
 # LibAirspy
 add_library(airspy STATIC deps/libairspy/airspy.c deps/libairspy/iqconverter_float.c deps/libairspy/iqconverter_int16.c)
