@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: android-debug-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   assemble-debug:
     runs-on: ubuntu-24.04
@@ -38,7 +42,11 @@ jobs:
 
       - name: Build native Android dependencies
         working-directory: android/deps
-        run: bash build.sh
+        run: |
+          # The app's abiFilters only package ARM binaries, so test those exact
+          # targets instead of spending runner time on unsupported emulator ABIs.
+          sed -i -E '/^build_[a-z0-9_]+ (x86|x86_64)$/d' build.sh
+          bash build.sh
 
       - name: Assemble debug APK
         working-directory: android
