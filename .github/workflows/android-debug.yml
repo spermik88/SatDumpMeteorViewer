@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Check out sources and Android dependencies
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           submodules: recursive
 
@@ -50,7 +50,21 @@ jobs:
 
       - name: Assemble debug APK
         working-directory: android
-        run: ./gradlew :app:assembleDebug --stacktrace
+        run: |
+          set +e
+          ./gradlew :app:assembleDebug --stacktrace > gradle-build.log 2>&1
+          result=$?
+          if [ "$result" -ne 0 ]; then
+            excerpt="$(tail -n 80 gradle-build.log | tr '\n' ' ' | sed 's/  */ /g')"
+            echo "::error title=Gradle assembleDebug failed::$excerpt"
+            {
+              echo '### Gradle assembleDebug failure'
+              echo '```text'
+              tail -n 160 gradle-build.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$result"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
