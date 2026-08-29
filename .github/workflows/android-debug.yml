@@ -52,9 +52,9 @@ jobs:
           # The viewer does not link SQLite and the historical R1NC/sqlite
           # clone URL is no longer public, so omit that unused dependency.
           sed -i -E '/^git clone https:\/\/github\.com\/R1NC\/sqlite /d; /^build_sqlite [a-z0-9_-]+$/d; /^rm -rf sqlite$/d' build.sh
-          # Match the CMake version used later by Gradle.  The runner's system
-          # CMake is newer and is not compatible with this NDK 25 dependency build.
-          export PATH="$ANDROID_HOME/cmake/3.22.1/bin:$PATH"
+          # HDF5 2.0 requires CMake 3.26+.  Gradle uses SDK CMake 3.22.1 later
+          # to configure the app, but dependency generation needs the runner's
+          # newer CMake and produces toolchain-compatible static libraries.
           cmake --version
           set +e
           # build.sh itself does not enable errexit; use it here so a failed
