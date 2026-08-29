@@ -56,7 +56,7 @@ jobs:
           bash -e build.sh > deps-build.log 2>&1
           result=$?
           if [ "$result" -ne 0 ]; then
-            excerpt="$(tail -n 100 deps-build.log | head -c 16000)"
+            excerpt="$(tail -n 100 deps-build.log | tail -c 16000)"
             excerpt="$(printf '%s' "$excerpt" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e ':a;N;$!ba;s/\n/%0A/g')"
             echo "::error title=Android dependency build failed::$excerpt"
             {
