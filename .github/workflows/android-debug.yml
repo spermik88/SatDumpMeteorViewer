@@ -55,11 +55,21 @@ jobs:
           ./gradlew :app:assembleDebug --stacktrace > gradle-build.log 2>&1
           result=$?
           if [ "$result" -ne 0 ]; then
-            excerpt="$(tail -n 80 gradle-build.log | tr '\n' ' ' | sed 's/  */ /g')"
+            # The useful Gradle error comes before the stack trace.  Keep that
+            # section in the annotation so a public run is diagnosable without
+            # downloading its protected raw log archive.
+            excerpt="$(sed -n '/^\* What went wrong:/,/^\* Try:/p' gradle-build.log | head -c 16000)"
+            if [ -z "$excerpt" ]; then
+              excerpt="$(grep -n -E '(^|[[:space:]])(FAILURE:|Execution failed|Caused by|error:)' gradle-build.log | head -n 80)"
+            fi
+            excerpt="$(printf '%s' "$excerpt" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e ':a;N;$!ba;s/\n/%0A/g')"
             echo "::error title=Gradle assembleDebug failed::$excerpt"
             {
               echo '### Gradle assembleDebug failure'
               echo '```text'
+              sed -n '/^\* What went wrong:/,/^\* Try:/p' gradle-build.log
+              echo
+              echo '--- final 160 log lines ---'
               tail -n 160 gradle-build.log
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
