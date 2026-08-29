@@ -91,6 +91,9 @@ elseif(ANDROID)
     # Jemalloc
     # TODO
 
+    # Android-specific UI helpers access ANativeActivity through this NDK header.
+    target_include_directories(satdump_core PRIVATE ${ANDROID_NDK}/sources/android/native_app_glue)
+
     # VOLK
     target_link_libraries(satdump_core PUBLIC volk cpufeatures m log dl)
     target_include_directories(satdump_core PUBLIC ../volk_includes)
