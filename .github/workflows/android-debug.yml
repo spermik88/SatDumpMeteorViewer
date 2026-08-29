@@ -46,7 +46,23 @@ jobs:
           # The app's abiFilters only package ARM binaries, so test those exact
           # targets instead of spending runner time on unsupported emulator ABIs.
           sed -i -E '/^build_[a-z0-9_]+ (x86|x86_64)$/d' build.sh
-          bash build.sh
+          set +e
+          # build.sh itself does not enable errexit; use it here so a failed
+          # package cannot be masked by a later successful command.
+          bash -e build.sh > deps-build.log 2>&1
+          result=$?
+          if [ "$result" -ne 0 ]; then
+            excerpt="$(tail -n 100 deps-build.log | head -c 16000)"
+            excerpt="$(printf '%s' "$excerpt" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e ':a;N;$!ba;s/\n/%0A/g')"
+            echo "::error title=Android dependency build failed::$excerpt"
+            {
+              echo '### Android dependency build failure'
+              echo '```text'
+              tail -n 200 deps-build.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$result"
 
       - name: Assemble debug APK
         working-directory: android
