@@ -46,6 +46,10 @@ jobs:
           # The app's abiFilters only package ARM binaries, so test those exact
           # targets instead of spending runner time on unsupported emulator ABIs.
           sed -i -E '/^build_[a-z0-9_]+ (x86|x86_64)$/d' build.sh
+          # Match the CMake version used later by Gradle.  The runner's system
+          # CMake is newer and is not compatible with this NDK 25 dependency build.
+          export PATH="$ANDROID_HOME/cmake/3.22.1/bin:$PATH"
+          cmake --version
           set +e
           # build.sh itself does not enable errexit; use it here so a failed
           # package cannot be masked by a later successful command.
