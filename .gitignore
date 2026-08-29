@@ -1,4 +1,6 @@
 .vscode
+.idea
+*.logcat
 build
 android/local.properties
 android/SatDump/.cxx

@@ -9,14 +9,6 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
-# Build in release mod so it isn't unusably slow
-set(CMAKE_CXX_FLAGS_RELEASE "-O3")
-set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3")
-set(CMAKE_CXX_FLAGS_DEBUG "-O3")
-set(CMAKE_C_FLAGS_RELEASE "-O3")
-set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O3")
-set(CMAKE_C_FLAGS_DEBUG "-O3")
-
 # ##########################################################################################################################################
 include_directories(deps/output/${ANDROID_ABI}/include)
 
@@ -111,10 +103,6 @@ set_target_properties(zstd PROPERTIES IMPORTED_LOCATION ${PROJECT_SOURCE_DIR}/de
 add_library(tiff STATIC IMPORTED)
 set_target_properties(tiff PROPERTIES IMPORTED_LOCATION ${PROJECT_SOURCE_DIR}/deps/output/${ANDROID_ABI}/lib/libtiff.a)
 # include_directories(deps/tiff/jni/)
-
-include_directories(android_imgui PRIVATE
-  ${ANDROID_NDK}/sources/android/native_app_glue
-)
 
 # ##########################################################################################################################################
 

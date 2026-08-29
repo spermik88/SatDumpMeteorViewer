@@ -1,18 +1,18 @@
 #!/bin/sh
-set -e
+set -eu
 
-REQUIRED_VERSION="8.10.2"
+APP_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+WRAPPER_JAR="$APP_HOME/gradle/wrapper/gradle-wrapper.jar"
 
-if ! command -v gradle >/dev/null 2>&1; then
-  echo "ERROR: gradle не найден в PATH." >&2
-  echo "Установите Gradle ${REQUIRED_VERSION} и повторите команду." >&2
+if [ ! -f "$WRAPPER_JAR" ]; then
+  echo "ERROR: Gradle Wrapper JAR is missing: $WRAPPER_JAR" >&2
   exit 1
 fi
 
-CURRENT_VERSION=$(gradle --version | awk '/^Gradle / {print $2; exit}')
-if [ "$CURRENT_VERSION" != "$REQUIRED_VERSION" ]; then
-  echo "ERROR: требуется Gradle ${REQUIRED_VERSION}, найден ${CURRENT_VERSION}." >&2
-  exit 1
+if [ -n "${JAVA_HOME:-}" ]; then
+  JAVA_EXE="$JAVA_HOME/bin/java"
+else
+  JAVA_EXE="java"
 fi
 
-exec gradle "$@"
+exec "$JAVA_EXE" -classpath "$WRAPPER_JAR" org.gradle.wrapper.GradleWrapperMain "$@"

@@ -18,7 +18,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -27,20 +27,11 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.EditText
 import android.widget.RelativeLayout
+import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import androidx.core.content.PermissionChecker
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-
-// Extension on intent
-fun Intent?.getFilePath(context: Context): String {
-    return this?.data?.let { data -> RealPathUtil.getRealPath(context, data) ?: "" } ?: ""
-}
-
-// Extension on intent
-fun Intent?.getFilePathDir(context: Context): String {
-    return this?.data?.let { data -> RealPathUtil.getRealPath(context, DocumentsContract.buildDocumentUriUsingTree(data, DocumentsContract.getTreeDocumentId(data))) ?: "" } ?: ""
-}
 
 class MainActivity : NativeActivity(), TextWatcher {
     private val TAG : String = "SatDump";
@@ -227,29 +218,33 @@ class MainActivity : NativeActivity(), TextWatcher {
     }
 
     public fun getAppDir(): String {
-        val fdir = filesDir.absolutePath
-        val aman = assets
-        val startMs = SystemClock.elapsedRealtime()
-        val stats = AssetSyncStats()
-        val syncVersion = getAssetsSyncVersion()
-        val prefs = getSharedPreferences(ASSET_SYNC_PREFS, Context.MODE_PRIVATE)
-        val lastSyncedVersion = prefs.getString(ASSET_SYNC_KEY, null)
-        val canSkip = lastSyncedVersion == syncVersion && hasAssetSentinels(fdir)
+        return try {
+            val fdir = filesDir.absolutePath
+            val aman = assets
+            val startMs = SystemClock.elapsedRealtime()
+            val stats = AssetSyncStats()
+            val syncVersion = getAssetsSyncVersion()
+            val prefs = getSharedPreferences(ASSET_SYNC_PREFS, Context.MODE_PRIVATE)
+            val lastSyncedVersion = prefs.getString(ASSET_SYNC_KEY, null)
+            val canSkip = lastSyncedVersion == syncVersion && hasAssetSentinels(fdir)
 
-        if (!canSkip) {
-            extractDir(aman, "$fdir/resources", "resources", stats)
-            extractDir(aman, "$fdir/pipelines", "pipelines", stats)
-            extractFile(aman, "$fdir/satdump_cfg.json", "satdump_cfg.json", stats)
-            prefs.edit().putString(ASSET_SYNC_KEY, syncVersion).apply()
+            if (!canSkip) {
+                extractDir(aman, "$fdir/resources", "resources", stats)
+                extractDir(aman, "$fdir/pipelines", "pipelines", stats)
+                extractFile(aman, "$fdir/satdump_cfg.json", "satdump_cfg.json", stats)
+                prefs.edit().putString(ASSET_SYNC_KEY, syncVersion).apply()
+            }
+
+            val elapsed = SystemClock.elapsedRealtime() - startMs
+            Log.i(
+                TAG,
+                "Asset sync summary: skipped=$canSkip checked=${stats.filesChecked} copied=${stats.filesCopied} durationMs=$elapsed"
+            )
+            fdir
+        } catch (e: Exception) {
+            Log.e(TAG, "Asset sync failed; startup cannot continue safely", e)
+            ""
         }
-
-        val elapsed = SystemClock.elapsedRealtime() - startMs
-        Log.i(
-            TAG,
-            "Asset sync summary: skipped=$canSkip checked=${stats.filesChecked} copied=${stats.filesCopied} durationMs=$elapsed"
-        )
-
-        return fdir
     }
 
     public fun get_plugins_directory() : String {
@@ -341,13 +336,15 @@ class MainActivity : NativeActivity(), TextWatcher {
     }
 
     // Handle selecting a file
-    var select_file_result : String = "";
+    @Volatile var select_file_result : String = "";
     public fun select_file() {
-        var file_intent = Intent(Intent.ACTION_GET_CONTENT);
-        file_intent.setType("*/*");
-        file_intent.addCategory(Intent.CATEGORY_OPENABLE);
-        val final_intent = Intent.createChooser(file_intent, "Выберите файл");
-        startActivityForResult(final_intent, 1);
+        runOnUiThread {
+            val fileIntent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+            fileIntent.type = "*/*"
+            fileIntent.addCategory(Intent.CATEGORY_OPENABLE)
+            fileIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            startActivityForResult(Intent.createChooser(fileIntent, "Выберите файл"), 1)
+        }
     }
 
     public fun select_file_get() : String {
@@ -357,13 +354,22 @@ class MainActivity : NativeActivity(), TextWatcher {
     }
 
     // Handle selecting a directory
-    var select_directory_result : String = "";
+    @Volatile var select_directory_result : String = "";
     public fun select_directory() {
-        var file_intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-        file_intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        file_intent.addCategory(Intent.CATEGORY_DEFAULT);
-        val final_intent = Intent.createChooser(file_intent, "Выберите папку");
-        startActivityForResult(final_intent, 2);
+        // SatDump's native processing API needs a POSIX path. A document-tree URI
+        // cannot safely be converted to one on Android's scoped storage, so keep
+        // outputs in the app-owned archive directory instead of returning a path
+        // which later fails at write time.
+        runOnUiThread {
+            val archiveDir = File(filesDir, "images")
+            if (archiveDir.exists() || archiveDir.mkdirs()) {
+                select_directory_result = archiveDir.absolutePath
+                Toast.makeText(this, "Снимки сохраняются во внутренний архив приложения", Toast.LENGTH_LONG).show()
+            } else {
+                Log.e(TAG, "Could not create app archive directory: ${archiveDir.absolutePath}")
+                select_directory_result = "NO_PATH_SELECTED"
+            }
+        }
     }
 
     public fun select_directory_get() : String {
@@ -382,17 +388,44 @@ class MainActivity : NativeActivity(), TextWatcher {
         super.onActivityResult(requestCode, resultCode, data);
 
         if (requestCode == 1) {
-            if(resultCode == RESULT_OK)
-                select_file_result = data.getFilePath(getApplicationContext());
-            else if(resultCode == RESULT_CANCELED)
+            if (resultCode == RESULT_OK && data?.data != null) {
+                select_file_result = try {
+                    copySelectedFileToAppStorage(data.data!!)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to import selected file", e)
+                    "NO_PATH_SELECTED"
+                }
+            } else
                 select_file_result = "NO_PATH_SELECTED";
         }
+    }
 
-        if (requestCode == 2) {
-            if(resultCode == RESULT_OK)
-                select_directory_result = data.getFilePathDir(getApplicationContext());
-            else if(resultCode == RESULT_CANCELED)
-                select_directory_result = "NO_PATH_SELECTED";
+    private fun copySelectedFileToAppStorage(uri: Uri): String {
+        try {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (e: SecurityException) {
+            // The import is copied immediately, so a one-shot provider grant is sufficient.
+            Log.w(TAG, "Selected provider does not support a persistent read grant", e)
         }
+        val displayName = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        } ?: "input.bin"
+        val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "input.bin" }
+        val importsDir = File(filesDir, "imports")
+        if (!importsDir.exists() && !importsDir.mkdirs())
+            throw IOException("Could not create import cache")
+        val destination = File(importsDir, "${System.currentTimeMillis()}_$safeName")
+
+        try {
+            contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(destination).use { output ->
+                    input.copyTo(output, 32 * 1024)
+                }
+            } ?: throw IOException("Could not open selected URI")
+        } catch (e: Exception) {
+            destination.delete()
+            throw e
+        }
+        return destination.absolutePath
     }
 }

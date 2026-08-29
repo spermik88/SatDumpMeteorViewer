@@ -18,8 +18,11 @@
 #include "archive_path.h"
 
 #include <algorithm>
+#include <deque>
 #include <filesystem>
+#include <functional>
 #include <mutex>
+#include <utility>
 
 #include "imgui/implot/implot.h"
 #include "imgui/implot3d/implot3d.h"
@@ -60,6 +63,25 @@ namespace satdump
         std::vector<ArchiveEntry> archive_entries;
         bool archive_index_ready = false;
         std::mutex archive_index_mutex;
+        std::deque<std::function<void()>> main_ui_tasks;
+        std::mutex main_ui_tasks_mutex;
+
+        void post_to_main_ui(std::function<void()> task)
+        {
+            std::lock_guard<std::mutex> lock(main_ui_tasks_mutex);
+            main_ui_tasks.push_back(std::move(task));
+        }
+
+        void run_main_ui_tasks()
+        {
+            std::deque<std::function<void()>> tasks;
+            {
+                std::lock_guard<std::mutex> lock(main_ui_tasks_mutex);
+                tasks.swap(main_ui_tasks);
+            }
+            for (auto &task : tasks)
+                task();
+        }
 
         bool parse_archive_meta(const nlohmann::ordered_json &meta,
                                 const std::filesystem::path &run_dir,
@@ -340,40 +362,41 @@ namespace satdump
 
         eventBus->register_handler<ops::FirstValidFrameEvent>([](const ops::FirstValidFrameEvent &evt)
                                                               {
-                                                                  selected_run_id = ops::normalize_run_id(evt.run_id);
-                                                                  current_screen = Screen::Viewer;
-
-                                                                  std::string run_id = selected_run_id;
-                                                                  ui_thread_pool.push([run_id](int)
-                                                                                      {
-                                                                                          ops::OpsStateSnapshot state = ops::get_state();
-                                                                                          if (!state.current_run_tmp_dir.empty() &&
-                                                                                              viewer_app->loadArchiveRun(state.current_run_tmp_dir, run_id))
-                                                                                              return;
-                                                                                          if (!state.current_run_final_dir.empty() &&
-                                                                                              viewer_app->loadArchiveRun(state.current_run_final_dir, run_id))
-                                                                                              return;
-                                                                                      });
+                                                                  const std::string run_id = ops::normalize_run_id(evt.run_id);
+                                                                  post_to_main_ui([run_id]
+                                                                                  {
+                                                                                      selected_run_id = run_id;
+                                                                                      current_screen = Screen::Viewer;
+                                                                                      ops::OpsStateSnapshot state = ops::get_state();
+                                                                                      if (!state.current_run_tmp_dir.empty() &&
+                                                                                          viewer_app->loadArchiveRun(state.current_run_tmp_dir, run_id))
+                                                                                          return;
+                                                                                      if (!state.current_run_final_dir.empty())
+                                                                                          viewer_app->loadArchiveRun(state.current_run_final_dir, run_id);
+                                                                                  });
                                                               });
         eventBus->register_handler<ops::RunFinalizedEvent>([](const ops::RunFinalizedEvent &)
-                                                           { invalidate_archive_index(); });
+                                                           { post_to_main_ui([] { invalidate_archive_index(); }); });
         eventBus->register_handler<ops::FifoDeleteEvent>([](const ops::FifoDeleteEvent &evt)
                                                          {
-                                                             invalidate_archive_index();
-                                                             if (selected_run_id == evt.run_id)
-                                                             {
-                                                                 std::vector<std::string> runs = get_archive_run_ids();
-                                                                 if (runs.empty())
-                                                                 {
-                                                                     selected_run_id.clear();
-                                                                     current_screen = Screen::Archive;
-                                                                 }
-                                                                 else
-                                                                     open_run_in_viewer(runs.front());
-                                                             }
+                                                             const std::string deleted_run_id = evt.run_id;
+                                                             post_to_main_ui([deleted_run_id]
+                                                                             {
+                                                                                 invalidate_archive_index();
+                                                                                 if (selected_run_id != deleted_run_id)
+                                                                                     return;
+                                                                                 std::vector<std::string> runs = get_archive_run_ids();
+                                                                                 if (runs.empty())
+                                                                                 {
+                                                                                     selected_run_id.clear();
+                                                                                     current_screen = Screen::Archive;
+                                                                                 }
+                                                                                 else
+                                                                                     open_run_in_viewer(runs.front());
+                                                                             });
                                                          });
         eventBus->register_handler<ops::ArchiveChangedEvent>([](const ops::ArchiveChangedEvent &)
-                                                             { invalidate_archive_index(); });
+                                                             { post_to_main_ui([] { invalidate_archive_index(); }); });
 
         ensure_archive_base_path();
         load_archive_index();
@@ -392,6 +415,10 @@ namespace satdump
 
     void renderMainUI()
     {
+        // EventBus callbacks may originate in decoder and post-processing workers.
+        // All access to ImGui and ViewerApplication is serialized onto this thread.
+        run_main_ui_tasks();
+
         if (recorder_app)
             recorder_app->tick_background();
 

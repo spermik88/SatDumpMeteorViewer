@@ -3,6 +3,8 @@
 #include <android/asset_manager.h>
 #include <android/input.h>
 #include <android/keycodes.h>
+#include <stdexcept>
+#include <utility>
 #include "backend.h"
 #include "main_ui.h"
 #include "logger.h"
@@ -25,6 +27,84 @@ static int HideSoftKeyboardInput();
 static int PollUnicodeChars();
 static int GetAssetData(const char *filename, void **out_data);
 void bindImageTextureFunctions();
+
+namespace
+{
+    class ScopedJniEnv
+    {
+    public:
+        explicit ScopedJniEnv(JavaVM *vm) : vm(vm)
+        {
+            if (vm == nullptr)
+                throw std::runtime_error("Java VM is unavailable");
+
+            jint result = vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6);
+            if (result == JNI_OK)
+                return;
+            if (result != JNI_EDETACHED || vm->AttachCurrentThread(&env, nullptr) != JNI_OK)
+                throw std::runtime_error("Could not attach to JNI environment");
+            attached_by_scope = true;
+        }
+
+        ~ScopedJniEnv()
+        {
+            if (attached_by_scope)
+                vm->DetachCurrentThread();
+        }
+
+        JNIEnv *get() const { return env; }
+
+    private:
+        JavaVM *vm = nullptr;
+        JNIEnv *env = nullptr;
+        bool attached_by_scope = false;
+    };
+
+    void throw_if_java_exception(JNIEnv *env, const char *context)
+    {
+        if (!env->ExceptionCheck())
+            return;
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+        throw std::runtime_error(context);
+    }
+
+    std::string call_activity_string_method(struct android_app *app, const char *method_name)
+    {
+        ScopedJniEnv scope(app->activity->vm);
+        JNIEnv *env = scope.get();
+        jclass clazz = env->GetObjectClass(app->activity->clazz);
+        if (clazz == nullptr)
+            throw std::runtime_error("Could not get MainActivity class");
+        jmethodID method = env->GetMethodID(clazz, method_name, "()Ljava/lang/String;");
+        if (method == nullptr)
+        {
+            env->DeleteLocalRef(clazz);
+            throw std::runtime_error("Could not get MainActivity method");
+        }
+
+        jstring value = static_cast<jstring>(env->CallObjectMethod(app->activity->clazz, method));
+        throw_if_java_exception(env, "MainActivity string method failed");
+        if (value == nullptr)
+        {
+            env->DeleteLocalRef(clazz);
+            throw std::runtime_error("MainActivity returned no path");
+        }
+        const char *raw = env->GetStringUTFChars(value, nullptr);
+        if (raw == nullptr)
+        {
+            env->DeleteLocalRef(value);
+            env->DeleteLocalRef(clazz);
+            throw_if_java_exception(env, "Could not read MainActivity result");
+            throw std::runtime_error("Could not read MainActivity result");
+        }
+        std::string result(raw);
+        env->ReleaseStringUTFChars(value, raw);
+        env->DeleteLocalRef(value);
+        env->DeleteLocalRef(clazz);
+        return result;
+    }
+}
 
 void init(struct android_app *app)
 {
@@ -292,70 +372,12 @@ static int32_t handleInputEvent(struct android_app *app, AInputEvent *inputEvent
 
 std::string getAppFilesDir(struct android_app *app)
 {
-    JavaVM *java_vm = app->activity->vm;
-    JNIEnv *java_env = NULL;
-
-    jint jni_return = java_vm->GetEnv((void **)&java_env, JNI_VERSION_1_6);
-    if (jni_return == JNI_ERR)
-        throw std::runtime_error("Could not get JNI environement");
-
-    jni_return = java_vm->AttachCurrentThread(&java_env, NULL);
-    if (jni_return != JNI_OK)
-        throw std::runtime_error("Could not attach to thread");
-
-    jclass native_activity_clazz = java_env->GetObjectClass(app->activity->clazz);
-    if (native_activity_clazz == NULL)
-        throw std::runtime_error("Could not get MainActivity class");
-
-    jmethodID method_id = java_env->GetMethodID(native_activity_clazz, "getAppDir", "()Ljava/lang/String;");
-    if (method_id == NULL)
-        throw std::runtime_error("Could not get methode ID");
-
-    jstring jstr = (jstring)java_env->CallObjectMethod(app->activity->clazz, method_id);
-
-    const char *_str = java_env->GetStringUTFChars(jstr, NULL);
-    std::string str(_str);
-    java_env->ReleaseStringUTFChars(jstr, _str);
-
-    jni_return = java_vm->DetachCurrentThread();
-    if (jni_return != JNI_OK)
-        throw std::runtime_error("Could not detach from thread");
-
-    return str;
+    return call_activity_string_method(app, "getAppDir");
 }
 
 std::string getPluginsDir(struct android_app *app)
 {
-    JavaVM *java_vm = app->activity->vm;
-    JNIEnv *java_env = NULL;
-
-    jint jni_return = java_vm->GetEnv((void **)&java_env, JNI_VERSION_1_6);
-    if (jni_return == JNI_ERR)
-        throw std::runtime_error("Could not get JNI environement");
-
-    jni_return = java_vm->AttachCurrentThread(&java_env, NULL);
-    if (jni_return != JNI_OK)
-        throw std::runtime_error("Could not attach to thread");
-
-    jclass native_activity_clazz = java_env->GetObjectClass(app->activity->clazz);
-    if (native_activity_clazz == NULL)
-        throw std::runtime_error("Could not get MainActivity class");
-
-    jmethodID method_id = java_env->GetMethodID(native_activity_clazz, "get_plugins_directory", "()Ljava/lang/String;");
-    if (method_id == NULL)
-        throw std::runtime_error("Could not get methode ID");
-
-    jstring jstr = (jstring)java_env->CallObjectMethod(app->activity->clazz, method_id);
-
-    const char *_str = java_env->GetStringUTFChars(jstr, NULL);
-    std::string str(_str);
-    java_env->ReleaseStringUTFChars(jstr, _str);
-
-    jni_return = java_vm->DetachCurrentThread();
-    if (jni_return != JNI_OK)
-        throw std::runtime_error("Could not detach from thread");
-
-    return str;
+    return call_activity_string_method(app, "get_plugins_directory");
 }
 
 void android_main(struct android_app *app)
@@ -364,8 +386,22 @@ void android_main(struct android_app *app)
     bindImageTextureFunctions();
     bindBackendFunctions();
 
-    std::string path = getAppFilesDir(app);
-    android_plugins_dir = getPluginsDir(app);
+    std::string path;
+    try
+    {
+        path = getAppFilesDir(app);
+        android_plugins_dir = getPluginsDir(app);
+    }
+    catch (const std::exception &e)
+    {
+        __android_log_print(ANDROID_LOG_ERROR, g_LogTag, "Android startup failed: %s", e.what());
+        return;
+    }
+    if (path.empty())
+    {
+        __android_log_print(ANDROID_LOG_ERROR, g_LogTag, "%s", "Android startup aborted because app files are unavailable");
+        return;
+    }
     chdir(path.c_str());
 
     app->onAppCmd = handleAppCmd;
@@ -404,62 +440,56 @@ void android_main(struct android_app *app)
 // Therefore, we call ShowSoftKeyboardInput() of the main activity implemented in MainActivity.kt via JNI.
 static int ShowSoftKeyboardInput()
 {
-    JavaVM *java_vm = g_App->activity->vm;
-    JNIEnv *java_env = NULL;
-
-    jint jni_return = java_vm->GetEnv((void **)&java_env, JNI_VERSION_1_6);
-    if (jni_return == JNI_ERR)
+    try
+    {
+        ScopedJniEnv scope(g_App->activity->vm);
+        JNIEnv *env = scope.get();
+        jclass clazz = env->GetObjectClass(g_App->activity->clazz);
+        if (clazz == nullptr)
+            throw std::runtime_error("Could not get MainActivity class");
+        jmethodID method = env->GetMethodID(clazz, "showSoftInput", "()V");
+        if (method == nullptr)
+        {
+            env->DeleteLocalRef(clazz);
+            throw std::runtime_error("Could not get showSoftInput method");
+        }
+        env->CallVoidMethod(g_App->activity->clazz, method);
+        throw_if_java_exception(env, "showSoftInput failed");
+        env->DeleteLocalRef(clazz);
+        return 0;
+    }
+    catch (const std::exception &e)
+    {
+        __android_log_print(ANDROID_LOG_WARN, g_LogTag, "showSoftInput failed: %s", e.what());
         return -1;
-
-    jni_return = java_vm->AttachCurrentThread(&java_env, NULL);
-    if (jni_return != JNI_OK)
-        return -2;
-
-    jclass native_activity_clazz = java_env->GetObjectClass(g_App->activity->clazz);
-    if (native_activity_clazz == NULL)
-        return -3;
-
-    jmethodID method_id = java_env->GetMethodID(native_activity_clazz, "showSoftInput", "()V");
-    if (method_id == NULL)
-        return -4;
-
-    java_env->CallVoidMethod(g_App->activity->clazz, method_id);
-
-    jni_return = java_vm->DetachCurrentThread();
-    if (jni_return != JNI_OK)
-        return -5;
-
-    return 0;
+    }
 }
 
 static int HideSoftKeyboardInput()
 {
-    JavaVM *java_vm = g_App->activity->vm;
-    JNIEnv *java_env = NULL;
-
-    jint jni_return = java_vm->GetEnv((void **)&java_env, JNI_VERSION_1_6);
-    if (jni_return == JNI_ERR)
+    try
+    {
+        ScopedJniEnv scope(g_App->activity->vm);
+        JNIEnv *env = scope.get();
+        jclass clazz = env->GetObjectClass(g_App->activity->clazz);
+        if (clazz == nullptr)
+            throw std::runtime_error("Could not get MainActivity class");
+        jmethodID method = env->GetMethodID(clazz, "hideSoftInput", "()V");
+        if (method == nullptr)
+        {
+            env->DeleteLocalRef(clazz);
+            throw std::runtime_error("Could not get hideSoftInput method");
+        }
+        env->CallVoidMethod(g_App->activity->clazz, method);
+        throw_if_java_exception(env, "hideSoftInput failed");
+        env->DeleteLocalRef(clazz);
+        return 0;
+    }
+    catch (const std::exception &e)
+    {
+        __android_log_print(ANDROID_LOG_WARN, g_LogTag, "hideSoftInput failed: %s", e.what());
         return -1;
-
-    jni_return = java_vm->AttachCurrentThread(&java_env, NULL);
-    if (jni_return != JNI_OK)
-        return -2;
-
-    jclass native_activity_clazz = java_env->GetObjectClass(g_App->activity->clazz);
-    if (native_activity_clazz == NULL)
-        return -3;
-
-    jmethodID method_id = java_env->GetMethodID(native_activity_clazz, "hideSoftInput", "()V");
-    if (method_id == NULL)
-        return -4;
-
-    java_env->CallVoidMethod(g_App->activity->clazz, method_id);
-
-    jni_return = java_vm->DetachCurrentThread();
-    if (jni_return != JNI_OK)
-        return -5;
-
-    return 0;
+    }
 }
 
 // Unfortunately, the native KeyEvent implementation has no getUnicodeChar() function.
@@ -467,44 +497,42 @@ static int HideSoftKeyboardInput()
 // the resulting Unicode characters here via JNI and send them to Dear ImGui.
 static int PollUnicodeChars()
 {
-    JavaVM *java_vm = g_App->activity->vm;
-    JNIEnv *java_env = NULL;
-
-    jint jni_return = java_vm->GetEnv((void **)&java_env, JNI_VERSION_1_6);
-    if (jni_return == JNI_ERR)
-        return -1;
-
-    jni_return = java_vm->AttachCurrentThread(&java_env, NULL);
-    if (jni_return != JNI_OK)
-        return -2;
-
-    jclass native_activity_clazz = java_env->GetObjectClass(g_App->activity->clazz);
-    if (native_activity_clazz == NULL)
-        return -3;
-
-    jmethodID method_id = java_env->GetMethodID(native_activity_clazz, "pollUnicodeChar", "()I");
-    if (method_id == NULL)
-        return -4;
-
-    // Send the actual characters to Dear ImGui
-    ImGuiIO &io = ImGui::GetIO();
-    jint unicode_character;
-    while ((unicode_character = java_env->CallIntMethod(g_App->activity->clazz, method_id)) != 0)
+    try
     {
-        if (unicode_character == 0x08) // BackSpace
+        ScopedJniEnv scope(g_App->activity->vm);
+        JNIEnv *env = scope.get();
+        jclass clazz = env->GetObjectClass(g_App->activity->clazz);
+        if (clazz == nullptr)
+            throw std::runtime_error("Could not get MainActivity class");
+        jmethodID method = env->GetMethodID(clazz, "pollUnicodeChar", "()I");
+        if (method == nullptr)
         {
-            io.AddKeyEvent(ImGuiKey_Backspace, true);
-            io.AddKeyEvent(ImGuiKey_Backspace, false);
+            env->DeleteLocalRef(clazz);
+            throw std::runtime_error("Could not get pollUnicodeChar method");
         }
-        else
-            io.AddInputCharacter(unicode_character);
+
+        ImGuiIO &io = ImGui::GetIO();
+        jint unicode_character;
+        while ((unicode_character = env->CallIntMethod(g_App->activity->clazz, method)) != 0)
+        {
+            throw_if_java_exception(env, "pollUnicodeChar failed");
+            if (unicode_character == 0x08) // BackSpace
+            {
+                io.AddKeyEvent(ImGuiKey_Backspace, true);
+                io.AddKeyEvent(ImGuiKey_Backspace, false);
+            }
+            else
+                io.AddInputCharacter(unicode_character);
+        }
+        throw_if_java_exception(env, "pollUnicodeChar failed");
+        env->DeleteLocalRef(clazz);
+        return 0;
     }
-
-    jni_return = java_vm->DetachCurrentThread();
-    if (jni_return != JNI_OK)
-        return -5;
-
-    return 0;
+    catch (const std::exception &e)
+    {
+        __android_log_print(ANDROID_LOG_WARN, g_LogTag, "pollUnicodeChar failed: %s", e.what());
+        return -1;
+    }
 }
 
 // Helper to retrieve data placed into the assets/ directory (android/app/src/main/assets)

@@ -1,17 +1,17 @@
 @echo off
-set REQUIRED_VERSION=8.10.2
+setlocal
 
-where gradle >nul 2>nul
-if %ERRORLEVEL% neq 0 (
-  echo ERROR: gradle не найден в PATH. 1>&2
-  echo Установите Gradle %REQUIRED_VERSION% и повторите команду. 1>&2
+set "APP_HOME=%~dp0"
+set "WRAPPER_JAR=%APP_HOME%gradle\wrapper\gradle-wrapper.jar"
+
+if not exist "%WRAPPER_JAR%" (
+  echo ERROR: Gradle Wrapper JAR is missing: "%WRAPPER_JAR%" 1>&2
   exit /b 1
 )
 
-for /f "tokens=2" %%v in ('gradle --version ^| findstr /b "Gradle "') do set CURRENT_VERSION=%%v
-if not "%CURRENT_VERSION%"=="%REQUIRED_VERSION%" (
-  echo ERROR: требуется Gradle %REQUIRED_VERSION%, найден %CURRENT_VERSION%. 1>&2
-  exit /b 1
+if defined JAVA_HOME (
+  "%JAVA_HOME%\bin\java.exe" -classpath "%WRAPPER_JAR%" org.gradle.wrapper.GradleWrapperMain %*
+) else (
+  java -classpath "%WRAPPER_JAR%" org.gradle.wrapper.GradleWrapperMain %*
 )
-
-gradle %*
+exit /b %ERRORLEVEL%
