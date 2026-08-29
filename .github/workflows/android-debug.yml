@@ -56,7 +56,9 @@ jobs:
           bash -e build.sh > deps-build.log 2>&1
           result=$?
           if [ "$result" -ne 0 ]; then
-            excerpt="$(tail -n 100 deps-build.log | tail -c 16000)"
+            # GitHub stores at most 4096 characters per annotation; keep the
+            # end of the log where the compiler or make error is emitted.
+            excerpt="$(tail -n 100 deps-build.log | tail -c 3500)"
             excerpt="$(printf '%s' "$excerpt" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e ':a;N;$!ba;s/\n/%0A/g')"
             echo "::error title=Android dependency build failed::$excerpt"
             {
@@ -78,7 +80,7 @@ jobs:
             # The useful Gradle error comes before the stack trace.  Keep that
             # section in the annotation so a public run is diagnosable without
             # downloading its protected raw log archive.
-            excerpt="$(sed -n '/^\* What went wrong:/,/^\* Try:/p' gradle-build.log | head -c 16000)"
+            excerpt="$(sed -n '/^\* What went wrong:/,/^\* Try:/p' gradle-build.log | tail -c 3500)"
             if [ -z "$excerpt" ]; then
               excerpt="$(grep -n -E '(^|[[:space:]])(FAILURE:|Execution failed|Caused by|error:)' gradle-build.log | head -n 80)"
             fi
