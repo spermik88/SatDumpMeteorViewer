@@ -49,6 +49,9 @@ jobs:
           # The app's abiFilters only package ARM binaries, so test those exact
           # targets instead of spending runner time on unsupported emulator ABIs.
           sed -i -E '/^build_[a-z0-9_]+ (x86|x86_64)$/d' build.sh
+          # The viewer does not link SQLite and the historical R1NC/sqlite
+          # clone URL is no longer public, so omit that unused dependency.
+          sed -i -E '/^git clone https:\/\/github\.com\/R1NC\/sqlite /d; /^build_sqlite [a-z0-9_-]+$/d; /^rm -rf sqlite$/d' build.sh
           # Match the CMake version used later by Gradle.  The runner's system
           # CMake is newer and is not compatible with this NDK 25 dependency build.
           export PATH="$ANDROID_HOME/cmake/3.22.1/bin:$PATH"
