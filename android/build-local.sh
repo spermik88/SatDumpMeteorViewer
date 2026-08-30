@@ -8,6 +8,13 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+# Android NDK r25 and several bundled dependencies are known to work with
+# CMake 3.x. Prefer the local CI-compatible CMake installation when present;
+# otherwise a distribution-provided CMake 3.26 or newer is sufficient.
+if [[ -d /opt/cmake-3.28.6/bin ]]; then
+    export PATH=/opt/cmake-3.28.6/bin:"$PATH"
+fi
+
 if [[ -z "${ANDROID_HOME:-}" && -d /opt/android-sdk ]]; then
     export ANDROID_HOME=/opt/android-sdk
 fi
@@ -28,7 +35,8 @@ for required_path in \
     fi
 done
 
-if [[ ! -d android/deps/output/arm64-v8a/lib || ! -d android/deps/output/armeabi-v7a/lib ]]; then
+deps_stamp=android/deps/output/.satdump-local-deps-v1
+if [[ ! -f "$deps_stamp" ]]; then
     echo "Building cached ARM native dependencies (first run only)..."
     deps_script="$(mktemp)"
     trap 'rm -f "$deps_script"' EXIT
@@ -43,6 +51,7 @@ if [[ ! -d android/deps/output/arm64-v8a/lib || ! -d android/deps/output/armeabi
         -e '/^rm -rf sqlite$/d' \
         "$deps_script"
     (cd android/deps && bash -e "$deps_script")
+    touch "$deps_stamp"
 fi
 
 cd android
