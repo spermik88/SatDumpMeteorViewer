@@ -27,6 +27,12 @@ namespace satdump
     {
 #ifdef __ANDROID__
         appliance_mode = true;
+        // The Android appliance autostarts the Meteor LRPT pipeline.  Do not
+        // inherit the desktop recorder's generic 100 MHz default: a fresh
+        // install would otherwise tune away from the pipeline's primary
+        // 137.9 MHz Meteor downlink until the user manually changes it.
+        // Saved per-SDR settings are still loaded below and override this.
+        frequency_hz = 137900000;
 #endif
         if (appliance_mode)
             source_restart_backoff_seconds = 3;
