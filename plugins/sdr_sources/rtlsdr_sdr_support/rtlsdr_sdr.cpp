@@ -1,5 +1,6 @@
 #include "rtlsdr_sdr.h"
 #include <chrono>
+#include <cctype>
 
 void RtlSdrSource::_rx_callback(unsigned char *buf, uint32_t len, void *ctx)
 {
@@ -179,6 +180,38 @@ void RtlSdrSource::start()
     rtlsdr_dev_obj = nullptr;
     int device_count = (int)rtlsdr_get_device_count();
     int index = rtlsdr_get_index_by_serial(d_sdr_id.c_str());
+
+    // On Android, USB strings are unavailable until the user grants access to
+    // the device. getAvailableSources() therefore uses the enumeration index
+    // ("0", "1", ...) as the descriptor ID. That is not an RTL-SDR serial
+    // number, so accept an in-range numeric descriptor as a fallback.
+    if (index < 0 && !d_sdr_id.empty())
+    {
+        bool is_numeric_index = true;
+        for (unsigned char c : d_sdr_id)
+        {
+            if (std::isdigit(c) == 0)
+            {
+                is_numeric_index = false;
+                break;
+            }
+        }
+
+        if (is_numeric_index)
+        {
+            try
+            {
+                size_t parsed_chars = 0;
+                int candidate_index = std::stoi(d_sdr_id, &parsed_chars);
+                if (parsed_chars == d_sdr_id.size() && candidate_index >= 0 && candidate_index < device_count)
+                    index = candidate_index;
+            }
+            catch (const std::exception &)
+            {
+                // Keep the serial lookup error for an out-of-range value.
+            }
+        }
+    }
     int open_result = 0;
     bool open_attempted = false;
     if (index >= 0)
