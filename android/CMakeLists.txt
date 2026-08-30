@@ -165,6 +165,25 @@ target_include_directories(ad9361iio PRIVATE deps/libiio/ deps/libiio/deps deps/
 target_link_libraries(ad9361iio PRIVATE iio)
 
 # ##########################################################################################################################################
+# Android's libusb JNI backend owns UsbDeviceConnection file descriptors.  The
+# generic discovery routines in these optional USB sources close that
+# connection while Android is still its owner, which aborts Android 16 with
+# fdsan double-close errors.  Keep the RTL-SDR plugin enabled; it is the
+# supported receiver for this viewer.
+foreach(PLUGIN_NAME IN ITEMS
+  PLUGIN_AIRSPY_SDR_SUPPORT
+  PLUGIN_AIRSPYHF_SDR_SUPPORT
+  PLUGIN_HACKRF_SDR_SUPPORT
+  PLUGIN_HYDRASDR_SDR_SUPPORT
+  PLUGIN_LIMESDR_SDR_SUPPORT
+  PLUGIN_MIRISDR_SDR_SUPPORT
+  PLUGIN_PLUTOSDR_SDR_SUPPORT
+  PLUGIN_SDRPLAY_SDR_SUPPORT
+  PLUGIN_USRP_SDR_SUPPORT
+)
+  set(${PLUGIN_NAME} OFF CACHE BOOL "Disabled on Android: unsafe libusb discovery" FORCE)
+endforeach()
+
 add_subdirectory(.. ${CMAKE_BINARY_DIR}/all_libs)
 
 add_library(android_imgui SHARED
