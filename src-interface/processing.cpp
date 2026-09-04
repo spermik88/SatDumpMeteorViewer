@@ -574,7 +574,11 @@ namespace satdump
 
             package_run_output(output_file, "", is_appliance_mode());
 
-            if (config::main_cfg["user_interface"]["open_viewer_post_processing"]["value"].get<bool>())
+            // Appliance mode switches to the viewer through FirstValidFrameEvent
+            // on the main UI thread. Opening it here runs from the processing
+            // worker and can race drawUI while the viewer handlers are replaced.
+            if (!is_appliance_mode() &&
+                config::main_cfg["user_interface"]["open_viewer_post_processing"]["value"].get<bool>())
             {
                 if (std::filesystem::exists(output_file + "/dataset.json"))
                 {

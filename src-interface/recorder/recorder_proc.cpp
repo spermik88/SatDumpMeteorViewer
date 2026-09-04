@@ -640,37 +640,53 @@ namespace satdump
         if (!source_ptr || sdr_select_id < 0 || sdr_select_id >= (int)sources.size())
             return;
 
-        if (config::main_cfg["user"].contains("recorder_sdr_settings"))
+        auto &saved_settings = config::main_cfg["user"]["recorder_sdr_settings"];
+        auto &cfg = saved_settings[sources[sdr_select_id].name];
+
+        // A very low manual gain was inherited from the desktop-style recorder
+        // and made the Android Meteor appliance effectively deaf. Migrate that
+        // value once, while preserving an intentional gain selected afterwards.
+        constexpr const char *meteor_gain_migration_key = "meteor_appliance_gain_v1";
+        if (appliance_mode &&
+            is_rtl_source_descriptor(sources[sdr_select_id]) &&
+            !getValueOrDefault(cfg[meteor_gain_migration_key], false))
         {
-            if (config::main_cfg["user"]["recorder_sdr_settings"].contains(sources[sdr_select_id].name))
+            float saved_gain = getValueOrDefault(cfg["gain"], 0.0f);
+            if (!cfg.contains("gain") || saved_gain < 10.0f)
             {
-                auto &cfg = config::main_cfg["user"]["recorder_sdr_settings"][sources[sdr_select_id].name];
-                source_ptr->set_settings(cfg);
-                if (cfg.contains("samplerate"))
-                {
-                    try
-                    {
-                        source_ptr->set_samplerate(cfg["samplerate"]);
-                    }
-                    catch (std::exception &)
-                    {
-                    }
-                }
-                if (cfg.contains("frequency"))
-                {
-                    frequency_hz = cfg["frequency"].get<uint64_t>();
-                    set_frequency(frequency_hz);
-                }
-                if (cfg.contains("xconverter_frequency"))
-                    xconverter_frequency = cfg["xconverter_frequency"].get<double>();
-                else
-                    xconverter_frequency = 0;
-                if (cfg.contains("decimation"))
-                    current_decimation = cfg["decimation"].get<int>();
-                else
-                    current_decimation = 1;
+                cfg["gain"] = 40.2f;
+                cfg["lna_agc"] = false;
+                cfg["tuner_agc"] = false;
+                logger->info("Using Android Meteor RTL-SDR gain default: 40.2 dB");
+            }
+            cfg[meteor_gain_migration_key] = true;
+            config::saveUserConfig();
+        }
+
+        source_ptr->set_settings(cfg);
+        if (cfg.contains("samplerate"))
+        {
+            try
+            {
+                source_ptr->set_samplerate(cfg["samplerate"]);
+            }
+            catch (std::exception &)
+            {
             }
         }
+        if (cfg.contains("frequency"))
+        {
+            frequency_hz = cfg["frequency"].get<uint64_t>();
+            set_frequency(frequency_hz);
+        }
+        if (cfg.contains("xconverter_frequency"))
+            xconverter_frequency = cfg["xconverter_frequency"].get<double>();
+        else
+            xconverter_frequency = 0;
+        if (cfg.contains("decimation"))
+            current_decimation = cfg["decimation"].get<int>();
+        else
+            current_decimation = 1;
     }
 
     void RecorderApplication::start_processing()
@@ -747,6 +763,29 @@ namespace satdump
 
             std::vector<std::string> output_files = live_pipeline->getOutputFiles();
 
+            // Disconnecting an SDR before a valid Meteor frame used to turn the
+            // empty CADU into a final archive and start post-processing it. Keep
+            // the appliance waiting for the receiver instead.
+            if (appliance_mode && !ops::get_state().first_valid_frame)
+            {
+                live_pipeline.reset();
+                std::error_code remove_ec;
+                std::filesystem::path tmp_path(pipeline_output_dir_tmp);
+                if (!tmp_path.empty() && ops::is_temp_run_dir(tmp_path.filename().string()))
+                    std::filesystem::remove_all(tmp_path, remove_ec);
+                if (remove_ec)
+                    logger->warn("Failed to discard empty Meteor run %s: %s",
+                                 pipeline_output_dir_tmp.c_str(),
+                                 remove_ec.message().c_str());
+                else
+                    logger->info("Discarded Meteor run without a valid frame: %s", pipeline_run_id.c_str());
+
+                ops::set_pipeline_active(false);
+                reset_pass_inactivity_watchdog();
+                set_rx_status("waiting");
+                return;
+            }
+
             bool finalized = finalize_live_output_dir(pipeline_output_dir_tmp, pipeline_output_dir);
             std::string output_dir_for_processing = finalized ? pipeline_output_dir : pipeline_output_dir_tmp;
 
@@ -811,6 +850,7 @@ namespace satdump
                 source_ptr = dsp::getSourceFromDescriptor(sources[i]);
                 source_ptr->open();
                 sdr_select_id = i;
+                try_load_sdr_settings();
                 set_sdr_status("online");
                 source_restart_pending = false;
                 source_restart_backoff_seconds = 3;
