@@ -163,7 +163,7 @@ namespace satdump
         bool appliance_mode = false;
         std::chrono::steady_clock::time_point next_rtl_rescan_time = std::chrono::steady_clock::time_point::min();
         std::chrono::steady_clock::time_point source_unhealthy_since = std::chrono::steady_clock::time_point::min();
-        int appliance_rescan_interval_seconds = 1;
+        int appliance_rescan_interval_seconds = 3;
         int appliance_unhealthy_timeout_seconds = 2;
 
         std::string sdr_status = "offline";

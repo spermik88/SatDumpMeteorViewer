@@ -556,10 +556,7 @@ namespace satdump
         if (!source_ptr)
         {
             if (appliance_mode)
-            {
                 set_rx_status("waiting");
-                select_rtl_source_or_fail();
-            }
             return;
         }
 
@@ -834,12 +831,6 @@ namespace satdump
 
     bool RecorderApplication::select_rtl_source_or_fail()
     {
-        if (appliance_mode)
-        {
-            sources = get_available_rtl_sources();
-            sdr_select_string = make_source_select_string(sources);
-        }
-
         if (sources.empty())
         {
             sdr_select_id = -1;
@@ -949,6 +940,13 @@ namespace satdump
                     {
                         logger->warn("Current RTL source is no longer present, forcing reselect.");
                         reset_appliance_source();
+                    }
+                    else if (!source_ptr && !sources.empty())
+                    {
+                        // A USB attach should be handled on this tick instead of
+                        // waiting for an earlier exponential retry delay.
+                        source_restart_pending = false;
+                        source_restart_backoff_seconds = 3;
                     }
                 }
             }
