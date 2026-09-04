@@ -60,6 +60,23 @@ namespace satdump
 #endif
         }
 
+        std::vector<dsp::SourceDescriptor> get_available_rtl_sources()
+        {
+            auto rtl_source = dsp::dsp_sources_registry.find("rtlsdr");
+            if (rtl_source == dsp::dsp_sources_registry.end())
+                return {};
+
+            try
+            {
+                return rtl_source->second.getSources();
+            }
+            catch (const std::exception &e)
+            {
+                logger->error("Error trying to list RTL-SDR sources! %s", e.what());
+                return {};
+            }
+        }
+
         bool prepare_live_output_dirs(std::string &final_dir,
                                       std::string &tmp_dir)
         {
@@ -819,15 +836,7 @@ namespace satdump
     {
         if (appliance_mode)
         {
-            std::vector<dsp::SourceDescriptor> fresh_sources = dsp::getAllAvailableSources();
-            std::vector<dsp::SourceDescriptor> rtl_sources;
-            rtl_sources.reserve(fresh_sources.size());
-            for (const auto &src : fresh_sources)
-            {
-                if (is_rtl_source_descriptor(src))
-                    rtl_sources.push_back(src);
-            }
-            sources = rtl_sources;
+            sources = get_available_rtl_sources();
             sdr_select_string = make_source_select_string(sources);
         }
 
@@ -917,14 +926,7 @@ namespace satdump
             {
                 next_rtl_rescan_time = now + std::chrono::seconds(appliance_rescan_interval_seconds);
 
-                std::vector<dsp::SourceDescriptor> fresh_sources = dsp::getAllAvailableSources();
-                std::vector<dsp::SourceDescriptor> rtl_sources;
-                rtl_sources.reserve(fresh_sources.size());
-                for (const auto &src : fresh_sources)
-                {
-                    if (is_rtl_source_descriptor(src))
-                        rtl_sources.push_back(src);
-                }
+                std::vector<dsp::SourceDescriptor> rtl_sources = get_available_rtl_sources();
 
                 dsp::SourceDescriptor selected_before_rescan;
                 bool had_selected = sdr_select_id >= 0 && sdr_select_id < (int)sources.size();
