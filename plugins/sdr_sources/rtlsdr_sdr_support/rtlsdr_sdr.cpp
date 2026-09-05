@@ -398,12 +398,21 @@ std::vector<dsp::SourceDescriptor> RtlSdrSource::getAvailableSources()
 
     for (int i = 0; i < c; i++)
     {
+#ifdef __ANDROID__
+        // Android cannot reliably expose USB strings before permission is
+        // granted.  More importantly, librtlsdr obtains those strings by
+        // opening and closing another UsbDeviceConnection during every
+        // background scan.  The enumeration index is already the stable ID
+        // used by start() on Android, so avoid touching the active receiver.
+        results.push_back({"rtlsdr", "RTL-SDR #" + std::to_string(i), std::to_string(i)});
+#else
         const char *name = rtlsdr_get_device_name(i);
         char manufact[256], product[256], serial[256];
         if (rtlsdr_get_device_usb_strings(i, manufact, product, serial) != 0)
             results.push_back({"rtlsdr", std::string(name) + " #" + std::to_string(i), std::to_string(i)});
         else
             results.push_back({"rtlsdr", std::string(manufact) + " " + std::string(product) + " #" + std::string(serial), std::string(serial)});
+#endif
     }
 
     return results;
