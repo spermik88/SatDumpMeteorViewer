@@ -117,68 +117,9 @@ set_target_properties(tiff PROPERTIES IMPORTED_LOCATION ${PROJECT_SOURCE_DIR}/de
 
 # LibUSB
 file(GLOB_RECURSE libusb_cpps deps/libusb/*.c)
-
-# UsbDeviceConnection owns the descriptor returned by getFileDescriptor().
-# The bundled libusb backend used to close that same descriptor itself and
-# then call UsbDeviceConnection.close(), which Android's fdsan correctly
-# rejects as a double close.  Compile a generated copy of linux_usbfs.c that
-# duplicates the borrowed descriptor for libusb's exclusive ownership.  Keep
-# the dependency submodule pristine so local and CI builds use the same fix.
-set(libusb_usbfs_source "${CMAKE_CURRENT_SOURCE_DIR}/deps/libusb/os/linux_usbfs.c")
-set(libusb_usbfs_patched "${CMAKE_CURRENT_BINARY_DIR}/generated/libusb/linux_usbfs.c")
-file(READ "${libusb_usbfs_source}" libusb_usbfs_contents)
-set(libusb_android_fd_original [=[
-	int r, fd;
-	uint8_t *descriptors;
-	size_t descriptors_len;
-
-	r = android_jni_connect(cpriv->android_jni, priv->android_jni_device,
-		&hpriv->android_jni_connection, &fd, &descriptors, &descriptors_len);
-	if (r != LIBUSB_SUCCESS) {
-		if (r == LIBUSB_ERROR_ACCESS)
-			android_jni_request_permission(cpriv->android_jni, priv->android_jni_device);
-		return r;
-	}
-]=])
-set(libusb_android_fd_patched [=[
-	int r, android_fd, fd;
-	uint8_t *descriptors;
-	size_t descriptors_len;
-
-	r = android_jni_connect(cpriv->android_jni, priv->android_jni_device,
-		&hpriv->android_jni_connection, &android_fd, &descriptors, &descriptors_len);
-	if (r != LIBUSB_SUCCESS) {
-		if (r == LIBUSB_ERROR_ACCESS)
-			android_jni_request_permission(cpriv->android_jni, priv->android_jni_device);
-		return r;
-	}
-
-	/* UsbDeviceConnection owns android_fd and closes it from Java. Give
-	 * libusb its own descriptor so op_close() cannot double-close Java's. */
-	fd = dup(android_fd);
-	if (fd < 0) {
-		free(descriptors);
-		android_jni_disconnect(cpriv->android_jni, hpriv->android_jni_connection);
-		hpriv->android_jni_connection = NULL;
-		return LIBUSB_ERROR_IO;
-	}
-]=])
-string(FIND "${libusb_usbfs_contents}" "${libusb_android_fd_original}" libusb_android_fd_location)
-if(libusb_android_fd_location EQUAL -1)
-  message(FATAL_ERROR "Bundled libusb Android descriptor code changed; refresh the ownership patch")
-endif()
-string(REPLACE "${libusb_android_fd_original}" "${libusb_android_fd_patched}"
-  libusb_usbfs_contents "${libusb_usbfs_contents}")
-get_filename_component(libusb_usbfs_patched_dir "${libusb_usbfs_patched}" DIRECTORY)
-file(MAKE_DIRECTORY "${libusb_usbfs_patched_dir}")
-file(WRITE "${libusb_usbfs_patched}" "${libusb_usbfs_contents}")
-list(REMOVE_ITEM libusb_cpps "${libusb_usbfs_source}")
-list(APPEND libusb_cpps "${libusb_usbfs_patched}")
-
 add_library(usb STATIC ${libusb_cpps})
 target_include_directories(usb PRIVATE
   deps/libusb/
-  deps/libusb/os
   ${ANDROID_NDK}/sources/android/native_app_glue
 )
 
