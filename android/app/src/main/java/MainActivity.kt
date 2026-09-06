@@ -108,6 +108,12 @@ class MainActivity : NativeActivity(), TextWatcher {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        Log.i(TAG, "Reused activity for intent: ${intent.action}")
+    }
+
     override fun onDestroy() {
         super.onDestroy()
     }

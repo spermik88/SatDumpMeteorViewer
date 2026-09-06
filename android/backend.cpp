@@ -1,6 +1,5 @@
 #include "backend.h"
 #include "core/exception.h"
-#include "imgui/imgui_internal.h"
 
 extern struct android_app *g_App;
 extern EGLDisplay g_EglDisplay;
@@ -51,14 +50,6 @@ std::pair<int, int> funcBeginFrame()
 {
     if (g_EglDisplay == EGL_NO_DISPLAY || g_EglSurface == EGL_NO_SURFACE || ImGui::GetCurrentContext() == nullptr)
         return {0, 0};
-
-    // Android can revoke the native window while a frame is in progress (for
-    // example when the USB permission activity appears).  If the renderer had
-    // no surface on that frame, funcEndFrame() could not finish it.  Close the
-    // abandoned frame before starting the replacement window's first frame.
-    ImGuiContext *context = ImGui::GetCurrentContext();
-    if (context->WithinFrameScope)
-        ImGui::EndFrame();
 
     // Get display dimensions
     EGLint width = 0, height = 0;

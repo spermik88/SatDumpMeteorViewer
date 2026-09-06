@@ -1,4 +1,5 @@
 #include "rtlsdr_sdr.h"
+#include "logger.h"
 #include <chrono>
 #include <cctype>
 
@@ -395,6 +396,15 @@ std::vector<dsp::SourceDescriptor> RtlSdrSource::getAvailableSources()
     std::vector<dsp::SourceDescriptor> results;
 
     int c = rtlsdr_get_device_count();
+
+#ifdef __ANDROID__
+    static int last_reported_count = -1;
+    if (c != last_reported_count)
+    {
+        logger->info("Android RTL-SDR scan found %d device(s)", c);
+        last_reported_count = c;
+    }
+#endif
 
     for (int i = 0; i < c; i++)
     {

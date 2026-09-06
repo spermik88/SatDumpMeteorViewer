@@ -10,7 +10,6 @@
 #include "logger.h"
 #include "init.h"
 #include "loader/loader.h"
-#include "imgui/imgui_internal.h"
 
 // Data
 EGLDisplay g_EglDisplay = EGL_NO_DISPLAY;
@@ -303,13 +302,6 @@ void shutdown()
 {
     if (!g_Initialized)
         return;
-
-    // A USB permission activity can take the native window between NewFrame()
-    // and Render().  Finish that frame before tearing down the backends so a
-    // later APP_CMD_INIT_WINDOW does not trip ImGui's frame sanity assertion.
-    ImGuiContext *context = ImGui::GetCurrentContext();
-    if (context != nullptr && context->WithinFrameScope)
-        ImGui::EndFrame();
 
     // Cleanup
     ImGui_ImplOpenGL3_Shutdown();
