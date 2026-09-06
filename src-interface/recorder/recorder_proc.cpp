@@ -913,7 +913,12 @@ namespace satdump
                 set_rx_status("waiting");
             };
 
-            if (now >= next_rtl_rescan_time)
+            // On Android, asking librtlsdr for USB strings opens a temporary
+            // UsbDeviceConnection.  It is useful while selecting a receiver,
+            // but unnecessary and disruptive while the selected device is
+            // already streaming.  Once the source is reset, the expired timer
+            // makes the next frame rescan immediately.
+            if (now >= next_rtl_rescan_time && (!source_ptr || !is_started))
             {
                 next_rtl_rescan_time = now + std::chrono::seconds(appliance_rescan_interval_seconds);
 
